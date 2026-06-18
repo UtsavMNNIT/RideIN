@@ -23,8 +23,11 @@ import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.data.redis.domain.geo.GeoShape;
 import org.springframework.stereotype.Repository;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -48,12 +51,25 @@ public class RedisDriverLocationRepository implements DriverLocationRepository {
 
     private final StringRedisTemplate         redis;
     private final DefaultRedisScript<Long>    updateScript;
+    private final DefaultRedisScript<Long>    evictScript;
+
+    /** Every geo shard key (available + busy for each vehicle type), computed once. */
+    private final List<String> allGeoKeys;
 
     public RedisDriverLocationRepository(
             @Qualifier("geoRedisTemplate") StringRedisTemplate redis,
-            DefaultRedisScript<Long> updateDriverLocationScript) {
+            DefaultRedisScript<Long> updateDriverLocationScript,
+            DefaultRedisScript<Long> evictStaleDriverScript) {
         this.redis        = redis;
         this.updateScript = updateDriverLocationScript;
+        this.evictScript  = evictStaleDriverScript;
+
+        List<String> geoKeys = new ArrayList<>(VehicleType.values().length * 2);
+        for (VehicleType vt : VehicleType.values()) {
+            geoKeys.add(GEO_AVAILABLE_PREFIX + vt.name());
+            geoKeys.add(GEO_BUSY_PREFIX + vt.name());
+        }
+        this.allGeoKeys = List.copyOf(geoKeys);
     }
 
     // -------------------------------------------------------------------
@@ -145,5 +161,42 @@ public class RedisDriverLocationRepository implements DriverLocationRepository {
             }
         }
         return out;
+    }
+
+    // -------------------------------------------------------------------
+    // Eviction path (stale-driver sweeper)
+    // -------------------------------------------------------------------
+
+    @Override
+    public int evictStale(Duration olderThan) {
+        long threshold = Instant.now().minus(olderThan).toEpochMilli();
+
+        // Candidate stale drivers: heartbeat score (capturedAt) at or below the cutoff.
+        Set<String> candidates = redis.opsForZSet().rangeByScore(HEARTBEAT_KEY, 0, threshold);
+        if (candidates == null || candidates.isEmpty()) {
+            return 0;
+        }
+
+        String thresholdArg = Long.toString(threshold);
+        int evicted = 0;
+        for (String driverId : candidates) {
+            // KEYS = all geo shards, then heartbeat, then this driver's meta key.
+            List<String> keys = new ArrayList<>(allGeoKeys.size() + 2);
+            keys.addAll(allGeoKeys);
+            keys.add(HEARTBEAT_KEY);
+            keys.add(META_PREFIX + driverId);
+
+            // Compare-and-remove: the Lua re-checks the heartbeat score, so a driver
+            // that refreshed between the scan above and this call is left in place.
+            Long result = redis.execute(evictScript, keys, driverId, thresholdArg);
+            if (result != null && result == 1L) {
+                evicted++;
+            }
+        }
+
+        if (evicted > 0) {
+            log.info("Swept {} stale driver(s) from geo index (older than {})", evicted, olderThan);
+        }
+        return evicted;
     }
 }
