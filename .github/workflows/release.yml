@@ -1,0 +1,117 @@
+# =============================================================================
+# Release — tag-driven promotion
+#
+# Trigger: pushing an annotated tag `v*.*.*`.
+# Effects:
+#   - Re-tags the most recently published `sha-<short>` image with the
+#     semver tag (v1.2.3, 1.2, 1) plus the `release` moving pointer.
+#   - Generates a changelog from PRs/commits since the previous tag.
+#   - Creates a GitHub Release with the changelog body.
+#
+# Why re-tag instead of rebuild: the artefact that was tested and signed on
+# main must be the same artefact that ships in the release. Rebuilding from
+# source on tag would invalidate the prior signature + scan.
+# =============================================================================
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write       # create GitHub Release + push tag annotations
+  packages: write       # re-tag GHCR images
+  id-token: write       # cosign re-sign on the promoted tag
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: rideflow
+
+jobs:
+  promote-images:
+    name: Promote images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - rider-service
+          - driver-service
+          - location-service
+          - matching-service
+          - pricing-service
+          - notification-service
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve semver components
+        id: ver
+        run: |
+          REF="${GITHUB_REF_NAME}"          # e.g. v1.2.3
+          VERSION="${REF#v}"
+          MAJOR="${VERSION%%.*}"
+          MINOR="${VERSION%.*}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major=$MAJOR"     >> "$GITHUB_OUTPUT"
+          echo "minor=$MINOR"     >> "$GITHUB_OUTPUT"
+
+      - name: Pull source image (sha-tagged from main)
+        env:
+          SRC: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:sha-${{ github.sha }}
+        run: docker pull "$SRC"
+
+      - name: Re-tag and push semver tags
+        env:
+          BASE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          SRC:  ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:sha-${{ github.sha }}
+        run: |
+          for tag in "${{ steps.ver.outputs.version }}" \
+                     "${{ steps.ver.outputs.minor }}"   \
+                     "${{ steps.ver.outputs.major }}"   \
+                     "release"; do
+            docker tag  "$SRC" "$BASE:$tag"
+            docker push "$BASE:$tag"
+          done
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Sign promoted tags
+        env:
+          BASE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+        run: |
+          for tag in "${{ steps.ver.outputs.version }}" "release"; do
+            cosign sign --yes "$BASE:$tag"
+          done
+
+  github-release:
+    name: GitHub Release
+    needs: [promote-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # need history for the changelog
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}    # v1.2.3-rc.1 → pre-release
+          name: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}

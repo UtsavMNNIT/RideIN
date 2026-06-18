@@ -1,0 +1,108 @@
+asyncapi: 2.6.0
+
+info:
+  title: RideFlow Event Catalog
+  version: 0.1.0
+  description: |
+    Kafka event contracts for RideFlow.
+
+    All payloads share the {@link EventEnvelope} structure:
+    {
+      "eventId":    "<uuid>",
+      "eventType":  "<context>.<PastTenseAction>",
+      "version":    <int>,
+      "occurredAt": "<ISO-8601>",
+      "traceId":    "<string|null>",
+      "source":     "<service-name>",
+      "payload":    { ... event-specific ... }
+    }
+
+    Topics are provisioned by infra/docker/kafka/topics-init.sh.
+    Java constants live in com.rideflow.common.events.Topics / EventTypes.
+
+defaultContentType: application/json
+
+servers:
+  local:
+    url: kafka:9092
+    protocol: kafka
+    description: docker-compose internal listener
+
+channels:
+  driver.location-updated:
+    description: |
+      Driver telemetry stream. High volume (~5K msg/s sustained at scale).
+      Published by driver-service. Consumed by location-service
+      (Redis Geo index maintenance), matching-service (live ETA refinement),
+      and trip-pricing-service (route tracing during active trips).
+
+      Partitioning: key = driverId → strict per-driver ordering across 24 partitions.
+      Retention: 1 hour. Compaction: OFF. Loss tolerance: best-effort.
+    publish:
+      operationId: publishDriverLocation
+      summary: A driver reported a new location reading.
+      message:
+        $ref: '#/components/messages/DriverLocationUpdated'
+
+components:
+  messages:
+    DriverLocationUpdated:
+      name: DriverLocationUpdated
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          kafka.key:
+            type: string
+            format: uuid
+            description: driverId — partition key
+      payload:
+        $ref: '#/components/schemas/EventEnvelope_DriverLocationUpdated'
+
+  schemas:
+    EventEnvelope_DriverLocationUpdated:
+      type: object
+      required: [eventId, eventType, version, occurredAt, source, payload]
+      properties:
+        eventId:    { type: string, format: uuid }
+        eventType:  { type: string, enum: ['driver.LocationUpdated'] }
+        version:    { type: integer, enum: [1] }
+        occurredAt: { type: string, format: date-time }
+        traceId:    { type: string, nullable: true }
+        source:     { type: string, enum: ['driver-service'] }
+        payload:    { $ref: '#/components/schemas/DriverLocationPayload' }
+
+    DriverLocationPayload:
+      type: object
+      required: [driverId, lat, lng, vehicleType, availability, capturedAt]
+      properties:
+        driverId:
+          type: string
+          format: uuid
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        headingDegrees:
+          type: number
+          nullable: true
+          minimum: 0
+          exclusiveMaximum: 360
+        speedMps:
+          type: number
+          nullable: true
+          minimum: 0
+        vehicleType:
+          type: string
+          enum: [STANDARD, XL, PREMIUM]
+        availability:
+          type: string
+          enum: [ONLINE, ON_TRIP]
+        capturedAt:
+          type: string
+          format: date-time
+          description: when the device recorded the reading (NOT server clock)

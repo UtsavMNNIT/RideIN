@@ -1,0 +1,29 @@
+# Keep the build context tiny — every byte gets sent to the Docker daemon.
+**/target/
+**/build/
+**/.gradle/
+**/.idea/
+**/.vscode/
+**/*.iml
+**/.DS_Store
+
+# Test artefacts not needed in the image build
+**/surefire-reports/
+**/failsafe-reports/
+
+# Local-only files
+**/.env
+**/.env.local
+**/.env.*.local
+**/application-local.yml
+**/application-local.properties
+
+# Git noise
+.git/
+.gitignore
+.gitattributes
+
+# Misc
+**/*.log
+**/logs/
+**/tmp/

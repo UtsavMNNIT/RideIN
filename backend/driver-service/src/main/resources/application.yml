@@ -1,0 +1,65 @@
+# =============================================================================
+# driver-service — base configuration
+# Profile-specific overrides in application-{local,docker,test}.yml
+# =============================================================================
+spring:
+  application:
+    name: driver-service
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false   # forward-compatible event consumption
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false    # ISO-8601 everywhere
+
+  kafka:
+    # Internal listener — overridden per profile / via env.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_INTERNAL:kafka:9092}
+    properties:
+      reconnect.backoff.ms: 100
+      reconnect.backoff.max.ms: 5000
+      # Producer ID lifecycle — keep transactional state local to the broker.
+      enable.idempotence: true
+    producer:
+      client-id: driver-service-producer
+      acks: all
+      # The full producer tuning lives in KafkaProducerConfig.java
+      # to keep YAML lean and document each non-default in code.
+
+server:
+  port: 8083
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json
+  forward-headers-strategy: native        # gateway terminates TLS / sets X-Forwarded-*
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  observations:
+    key-values:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0                    # tuned down in Phase 9
+
+logging:
+  level:
+    root: INFO
+    com.rideflow: DEBUG
+    org.apache.kafka: WARN
+    org.springframework.kafka: INFO
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n'

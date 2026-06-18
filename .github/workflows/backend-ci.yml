@@ -1,0 +1,111 @@
+# =============================================================================
+# Backend CI — Java 21 / Spring Boot 3 / Maven multi-module
+#
+# Runs on PRs and pushes to main. Path-filtered: a frontend-only change does
+# not burn runner minutes here.
+#
+# Quality gates (must pass to merge):
+#   - compile clean
+#   - unit + integration tests pass (Testcontainers needs Docker on the runner)
+#   - JUnit reports surfaced as PR annotations
+# =============================================================================
+name: backend-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  workflow_dispatch:
+
+# Cancel an in-flight run when a new commit lands on the same ref. PRs with
+# rapid pushes don't pile up; the only result that matters is the latest.
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default to read-only. Jobs requesting writes opt-in explicitly.
+permissions:
+  contents: read
+  checks: write              # for the test-reporter annotations
+  pull-requests: write       # for surface-on-PR comments
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  build-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # full history → meaningful blame on test failures
+
+      - name: Set up Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven       # caches ~/.m2/repository keyed on pom hashes
+
+      # Maven wrapper is the source of truth for the Maven version.
+      # Make it executable in case checkout dropped the bit.
+      - name: Ensure mvnw is executable
+        run: chmod +x ./mvnw
+
+      - name: Show toolchain
+        run: |
+          java -version
+          ./mvnw -v
+
+      - name: Compile (offline-friendly)
+        run: ./mvnw -B -ntp -DskipTests compile
+
+      - name: Unit tests
+        run: ./mvnw -B -ntp test
+
+      # Integration tests use Testcontainers. The ubuntu runner has Docker
+      # pre-installed; we just verify it's reachable before kicking off.
+      - name: Verify Docker availability
+        run: docker info >/dev/null
+
+      - name: Integration tests
+        run: ./mvnw -B -ntp -DskipUnitTests=true verify -Pintegration-test
+
+      - name: Aggregate test reports
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: JUnit
+          path: backend/**/target/surefire-reports/*.xml,backend/**/target/failsafe-reports/*.xml
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            backend/**/target/surefire-reports/**
+            backend/**/target/failsafe-reports/**
+          retention-days: 7
+
+      - name: Upload build artifacts
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jars
+          path: backend/**/target/*.jar
+          retention-days: 7

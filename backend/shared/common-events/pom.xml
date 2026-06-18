@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-service event contract.
+  Tiny module: EventEnvelope + Topics + EventTypes. Everything else lives in
+  its owning service so there is no shared payload class to drift on.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.rideflow</groupId>
+        <artifactId>rideflow-backend</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>common-events</artifactId>
+    <name>RideFlow :: common-events</name>
+
+    <dependencies>
+        <!-- Only Jackson annotations — no runtime Jackson; consumers provide it. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,26 @@
+node_modules
+.next
+.turbo
+out
+.vercel
+coverage
+.cache
+
+# Local env files — secrets must NEVER bake into the image
+.env
+.env.local
+.env.*.local
+
+# Editor / OS / VCS
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+*.iml
+.DS_Store
+
+# Build logs / tmp
+*.log
+logs
+tmp

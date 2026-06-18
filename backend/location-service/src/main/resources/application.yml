@@ -1,0 +1,102 @@
+# =============================================================================
+# location-service — base configuration
+# =============================================================================
+spring:
+  application:
+    name: location-service
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false      # forward-compat with envelope evolution
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false       # ISO-8601
+
+  # ---- Redis (two instances; see RedisConfig.java) ----
+  # Spring's auto-config is disabled in favour of explicit factories.
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_INTERNAL:kafka:9092}
+    consumer:
+      group-id: location-service
+      client-id: location-service-consumer
+      auto-offset-reset: latest               # production-safe; we don't replay history on first start
+      enable-auto-commit: false               # manual ack after Lua success
+      max-poll-records: 500
+      fetch-min-size: 1
+      fetch-max-wait: 100ms
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        # Increase if traffic bursts cause "Consumer poll timeout" warnings.
+        session.timeout.ms: 30000
+        heartbeat.interval.ms: 10000
+        max.poll.interval.ms: 300000
+    listener:
+      ack-mode: manual_immediate              # commit only after handler success
+      concurrency: 3                          # threads per pod; 8 pods saturates 24 partitions
+      missing-topics-fatal: false             # tolerate topic init lag at boot
+
+# ---- App-specific Redis wiring ----
+rideflow:
+  redis:
+    geo:
+      host: ${REDIS_GEO_HOST:redis-geo}
+      port: ${REDIS_GEO_PORT:6379}
+      database: 0
+      timeout: 1s
+    cache:
+      host: ${REDIS_CACHE_HOST:redis-cache}
+      port: ${REDIS_CACHE_PORT:6379}
+      database: 0
+      timeout: 500ms
+
+  location:
+    sweeper:
+      stale-after: PT15S                      # heartbeat older than 15s = stale
+      interval-ms: 10000                      # sweep every 10s (slice-2)
+    nearby:
+      max-radius-meters: 10000
+      max-limit: 50
+
+server:
+  port: 8082
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json
+  forward-headers-strategy: native
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  observations:
+    key-values:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  level:
+    root: INFO
+    com.rideflow: DEBUG
+    org.apache.kafka: WARN
+    org.springframework.kafka: INFO
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n'

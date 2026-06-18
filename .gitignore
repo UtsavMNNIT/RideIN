@@ -1,0 +1,36 @@
+# =============================================================================
+# RideFlow — root .gitignore (minimal; per-module .gitignore added in 1B)
+# =============================================================================
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Build outputs (filled in by per-module .gitignore in 1B)
+**/build/
+**/target/
+**/node_modules/
+**/.next/
+**/dist/
+**/out/
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Local override file
+docker-compose.override.yml
+
+# Docker tutorial sample (not part of this project)
+welcome-to-docker/

@@ -1,0 +1,56 @@
+# =============================================================================
+# Dependabot — keep dependencies and Actions current.
+# Weekly cadence: noisy enough to stay fresh, quiet enough to stay reviewable.
+# =============================================================================
+version: 2
+updates:
+  # ---- Backend: Maven multi-module ----
+  - package-ecosystem: maven
+    directory: "/backend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+    groups:
+      spring:
+        patterns: ["org.springframework*", "io.micrometer*"]
+      testing:
+        patterns: ["org.junit*", "org.mockito*", "org.testcontainers*", "org.assertj*"]
+      kafka:
+        patterns: ["org.apache.kafka*", "org.springframework.kafka*"]
+
+  # ---- Frontend: npm ----
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    groups:
+      next:
+        patterns: ["next", "@next/*", "eslint-config-next"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      tanstack:
+        patterns: ["@tanstack/*"]
+      lint:
+        patterns: ["eslint*", "prettier*", "@typescript-eslint/*"]
+      types:
+        patterns: ["@types/*"]
+
+  # ---- GitHub Actions ----
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels: [dependencies, ci]

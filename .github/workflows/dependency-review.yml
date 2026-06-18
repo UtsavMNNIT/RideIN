@@ -1,0 +1,34 @@
+# =============================================================================
+# Dependency Review — PR-time review of newly added/updated dependencies
+#
+# Fails the PR if it would introduce a HIGH/CRITICAL vulnerability or a
+# disallowed license. Cheap, fast, opinionated.
+# =============================================================================
+name: dependency-review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Review new dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          # Disallow strong-copyleft licenses for portfolio-grade clarity.
+          # Adjust per your legal stance.
+          deny-licenses: AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later
+          comment-summary-in-pr: on-failure

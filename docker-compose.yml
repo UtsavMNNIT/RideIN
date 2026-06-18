@@ -1,0 +1,262 @@
+name: rideflow
+
+# ---------------------------------------------------------------------------
+# RideFlow — local data-layer infrastructure
+# Phase 1B (partial): Postgres + Redis(geo,cache) + Zookeeper + Kafka
+# Application services join this compose file in later phases.
+# ---------------------------------------------------------------------------
+
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  networks:
+    - rideflow-net
+
+services:
+  # =========================================================================
+  # PostgreSQL — schema-per-service
+  # =========================================================================
+  postgres:
+    <<: *common
+    image: postgres:16.4-alpine
+    container_name: rideflow-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rideflow}
+      POSTGRES_USER: ${POSTGRES_USER:-rideflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rideflow}
+      RIDER_DB_PASSWORD: ${RIDER_DB_PASSWORD:-rider_pass}
+      DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD:-driver_pass}
+      MATCHING_DB_PASSWORD: ${MATCHING_DB_PASSWORD:-matching_pass}
+      PRICING_DB_PASSWORD: ${PRICING_DB_PASSWORD:-pricing_pass}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_pass}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rideflow} -d ${POSTGRES_DB:-rideflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # =========================================================================
+  # Redis — GEO (noeviction, AOF on)
+  # =========================================================================
+  redis-geo:
+    <<: *common
+    image: redis:7.4-alpine
+    container_name: rideflow-redis-geo
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisgeodata:/data
+      - ./infra/docker/redis/redis-geo.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # =========================================================================
+  # Redis — CACHE (allkeys-lru, no persistence)
+  # =========================================================================
+  redis-cache:
+    <<: *common
+    image: redis:7.4-alpine
+    container_name: rideflow-redis-cache
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - rediscachedata:/data
+      - ./infra/docker/redis/redis-cache.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # =========================================================================
+  # Zookeeper
+  # =========================================================================
+  zookeeper:
+    <<: *common
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: rideflow-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_INIT_LIMIT: 10
+      ZOOKEEPER_SYNC_LIMIT: 5
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "ruok,srvr,mntr,stat,conf"
+    volumes:
+      - zkdata:/var/lib/zookeeper/data
+      - zklogs:/var/lib/zookeeper/log
+    # `ruok` is NOT in the default 4lw whitelist for cp-zookeeper, and the
+    # ZOOKEEPER_4LW_COMMANDS_WHITELIST env var above isn't applied by the image
+    # (the leading-digit key fails to translate). `srvr` IS enabled by default
+    # and returns "Mode: standalone" once the server is up — use that instead.
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep -q Mode"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # =========================================================================
+  # Kafka (single broker, ZK-backed)
+  # =========================================================================
+  kafka:
+    <<: *common
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: rideflow-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # ---- Listener split: INTERNAL for containers, EXTERNAL for host ----
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      # ---- Production discipline: no auto-create ----
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      # ---- Single-broker tuning (must be 1, else broker fails) ----
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # ---- Defaults ----
+      KAFKA_NUM_PARTITIONS: 12
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_COMPRESSION_TYPE: lz4
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # ---- JMX (Prometheus scrape target in Phase 9) ----
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: kafka
+    ports:
+      - "127.0.0.1:29092:29092"
+      - "127.0.0.1:9101:9101"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # =========================================================================
+  # Kafka topics initializer (one-shot, idempotent)
+  # =========================================================================
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: rideflow-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    volumes:
+      - ./infra/docker/kafka/topics-init.sh:/topics-init.sh:ro
+    entrypoint: ["bash", "/topics-init.sh"]
+    restart: "no"
+    networks:
+      - rideflow-net
+
+  # =========================================================================
+  # notification-service — Kafka consumer + Redis pub/sub + WebSocket
+  # =========================================================================
+  notification-service:
+    <<: *common
+    image: rideflow/notification-service:dev
+    container_name: rideflow-notification-service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: notification-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-rideflow}
+      NOTIFICATION_DB_USER: notification_user
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_pass}
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      REDIS_CACHE_HOST: redis-cache
+      REDIS_CACHE_PORT: 6379
+      WS_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      RIDEFLOW_CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      RIDEFLOW_DEMO_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8086:8086"
+    # No curl/wget in the temurin:jre base — bash's /dev/tcp magic confirms
+    # the JVM bound port 8086. Good enough for compose-level liveness.
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8086' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =========================================================================
+  # Kafka UI (optional — `docker compose --profile tools up`)
+  # =========================================================================
+  kafka-ui:
+    <<: *common
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: rideflow-kafka-ui
+    profiles: ["tools"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: rideflow
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_METRICS_PORT: 9101
+      DYNAMIC_CONFIG_ENABLED: "true"
+      AUTH_TYPE: DISABLED
+    ports:
+      - "127.0.0.1:8089:8080"
+
+# ---------------------------------------------------------------------------
+volumes:
+  pgdata:
+  redisgeodata:
+  rediscachedata:
+  zkdata:
+  zklogs:
+  kafkadata:
+
+networks:
+  rideflow-net:
+    name: rideflow-net
+    driver: bridge

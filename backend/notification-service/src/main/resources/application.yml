@@ -1,0 +1,138 @@
+# =============================================================================
+# notification-service — base configuration
+# =============================================================================
+spring:
+  application:
+    name: notification-service
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres}:5432/${POSTGRES_DB:rideflow}?currentSchema=notification
+    username: ${NOTIFICATION_DB_USER:notification_user}
+    password: ${NOTIFICATION_DB_PASSWORD:notification_pass}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      pool-name: notification-pool
+
+  jpa:
+    properties:
+      hibernate:
+        default_schema: notification
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+    schemas: notification
+    default-schema: notification
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_INTERNAL:kafka:9092}
+    consumer:
+      group-id: notification-service
+      client-id: notification-service-consumer
+      auto-offset-reset: latest
+      enable-auto-commit: false
+      max-poll-records: 100
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        session.timeout.ms: 30000
+        max.poll.interval.ms: 300000
+    producer:
+      client-id: notification-service-producer
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    listener:
+      ack-mode: manual_immediate
+      concurrency: 3
+      missing-topics-fatal: false
+
+rideflow:
+  # CORS for HTTP endpoints. Production should pin to the deployed frontend origin.
+  cors:
+    allowed-origins: ${RIDEFLOW_CORS_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
+
+  # Demo endpoint toggle — `true` exposes /v1/demo/notify for the smoke test.
+  demo:
+    enabled: ${RIDEFLOW_DEMO_ENABLED:true}
+
+  redis:
+    # Shared cache instance — pub/sub channel for cross-replica WS fan-out.
+    pubsub:
+      host: ${REDIS_CACHE_HOST:redis-cache}
+      port: ${REDIS_CACHE_PORT:6379}
+      database: 0
+      timeout: 500ms
+      # All channels we publish/subscribe match this pattern.
+      channel-pattern: "notify:user:*"
+      channel-prefix:  "notify:user:"
+
+  websocket:
+    endpoint: /ws/notifications
+    allowed-origins: ${WS_ALLOWED_ORIGINS:*}
+    # Per-session send-buffer hard limit (bytes). Slow consumer → session closed.
+    send-buffer-size-limit: 524288        # 512 KiB
+    # If a single send doesn't drain within this window, close the session.
+    send-time-limit-ms: 2000
+    # Server-pushed heartbeat ping cadence; clients respond with pong.
+    heartbeat-interval-ms: 25000
+
+  # Portfolio-grade handshake auth. Production swaps in JwtHandshakeAuthenticator
+  # backed by common-security.
+  auth:
+    handshake:
+      mode: query-param                   # query-param | jwt
+      user-id-param: userId
+      role-param:    role
+
+server:
+  port: 8086
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json
+  forward-headers-strategy: native
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  level:
+    root: INFO
+    com.rideflow: DEBUG
+    org.apache.kafka: WARN
+    org.hibernate.SQL: WARN
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n'
