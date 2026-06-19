@@ -1,7 +1,6 @@
 package com.rideflow.matching.infrastructure.messaging.kafka.config;
 
 import com.rideflow.common.events.Topics;
-import com.rideflow.matching.application.port.out.LockAcquisitionException;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
@@ -35,7 +34,8 @@ import java.util.Map;
  * <ul>
  *   <li>{@link IllegalArgumentException} / {@link DeserializationException} —
  *       bad data, will never succeed → straight to DLQ, no retry.</li>
- *   <li>{@link LockAcquisitionException} and everything else — transient infra
+ *   <li>{@link com.rideflow.matching.application.port.out.LockAcquisitionException}
+ *       and everything else — transient infra
  *       (Redis/DB/broker) → retried with backoff; DLQ only after the budget.
  *       Fail closed: a ride is retried, never silently lost.</li>
  * </ul>

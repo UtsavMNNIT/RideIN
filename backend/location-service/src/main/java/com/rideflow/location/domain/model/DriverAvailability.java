@@ -21,8 +21,4 @@ public enum DriverAvailability {
             throw new IllegalArgumentException("unknown availability: " + raw, e);
         }
     }
-
-    public boolean isDispatchable() {
-        return this == ONLINE;
-    }
 }

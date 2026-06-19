@@ -5,9 +5,5 @@ public enum RideStatus {
     DISPATCHING,
     ASSIGNED,
     DISPATCH_FAILED,
-    CANCELLED;
-
-    public boolean isTerminal() {
-        return this == ASSIGNED || this == DISPATCH_FAILED || this == CANCELLED;
-    }
+    CANCELLED
 }

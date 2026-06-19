@@ -29,8 +29,4 @@ public record DispatchAttempt(
                 winner.driverId(), winner.score(),
                 DispatchOutcome.SUCCESS, durationMs, Instant.now());
     }
-
-    public boolean isSuccess() {
-        return outcome == DispatchOutcome.SUCCESS;
-    }
 }

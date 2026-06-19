@@ -11,7 +11,6 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.UUID;
 
 import static com.rideflow.notification.infrastructure.websocket.HandshakeAttributes.ATTR_USER_ID;
@@ -77,20 +76,6 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
     @Override
     protected void handlePongMessage(WebSocketSession session, PongMessage message) {
         // Receiving a pong implicitly proves liveness; no-op.
-    }
-
-    /**
-     * Sends a heartbeat ping. Called by {@code WebSocketHeartbeat} on the
-     * configured interval. Failures close the session — a session that can't
-     * be pinged is dead from the dispatcher's point of view.
-     */
-    public void heartbeat(WebSocketSession session) {
-        try {
-            session.sendMessage(new PingMessage(ByteBuffer.allocate(0)));
-        } catch (Exception e) {
-            log.debug("Heartbeat failed — closing sessionId={}", session.getId(), e);
-            close(session, CloseStatus.SESSION_NOT_RELIABLE);
-        }
     }
 
     private void close(WebSocketSession s, CloseStatus reason) {

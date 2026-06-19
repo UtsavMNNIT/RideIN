@@ -117,11 +117,6 @@ public record Driver(
         );
     }
 
-    /** True when this driver can currently be dispatched a ride. */
-    public boolean isAvailableForDispatch() {
-        return availability == DriverAvailability.ONLINE;
-    }
-
     private Driver withAvailability(DriverAvailability newAvailability) {
         return new Driver(
                 id, email, phone, fullName, passwordHash, vehicleType, vehiclePlate,
