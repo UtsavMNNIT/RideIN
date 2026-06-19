@@ -1,0 +1,126 @@
+# =============================================================================
+# pricing-service — base configuration
+# =============================================================================
+spring:
+  application:
+    name: pricing-service
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres}:5432/${POSTGRES_DB:rideflow}?currentSchema=pricing
+    username: ${PRICING_DB_USER:pricing_user}
+    password: ${PRICING_DB_PASSWORD:pricing_pass}
+    hikari:
+      maximum-pool-size: 16
+      minimum-idle: 4
+      connection-timeout: 5000
+      pool-name: pricing-pool
+
+  jpa:
+    properties:
+      hibernate:
+        default_schema: pricing
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate                    # Flyway owns DDL
+
+  flyway:
+    enabled: true
+    schemas: pricing
+    default-schema: pricing
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_INTERNAL:kafka:9092}
+    consumer:
+      group-id: pricing-service
+      client-id: pricing-service-consumer
+      auto-offset-reset: latest
+      enable-auto-commit: false
+      max-poll-records: 100
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        session.timeout.ms: 30000
+        max.poll.interval.ms: 300000
+    producer:
+      client-id: pricing-service-producer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    listener:
+      ack-mode: manual_immediate
+      concurrency: 3
+      missing-topics-fatal: false
+
+rideflow:
+  pricing:
+    currency: INR
+    # Up-front estimation knobs. Replace with a routing-service ETA later;
+    # the TripEstimator port keeps callers unaware of the swap.
+    estimate:
+      # straight-line (haversine) distance is multiplied by this to approximate
+      # actual road distance
+      road-factor: 1.30
+      # average city speed used to turn distance into a time estimate
+      avg-speed-kmph: 24.0
+    quote:
+      # an up-front quote is honoured for this long
+      ttl-minutes: 5
+    rate-card:
+      # how often the in-memory rate-card cache is refreshed from the DB, so an
+      # ops retune takes effect without a redeploy
+      refresh-ms: 60000
+    surge:
+      # flat baseline multiplier; per-vehicle overrides win when present.
+      # A demand-based provider can replace ConfigurableSurgeProvider later.
+      default-multiplier: 1.00
+      overrides: {}            # e.g. {STANDARD: 1.20, PREMIUM: 1.50}
+    outbox:
+      poll-interval-ms: 500
+      batch-size: 100
+      max-attempts: 10
+
+server:
+  port: 8085
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json
+  forward-headers-strategy: native
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  level:
+    root: INFO
+    com.rideflow: DEBUG
+    org.apache.kafka: WARN
+    org.hibernate.SQL: WARN
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-},%X{spanId:-}] %-5level %logger{36} - %msg%n'

@@ -23,6 +23,7 @@
         <module>location-service</module>
         <module>rider-service</module>
         <module>matching-service</module>
+        <module>pricing-service</module>
     </modules>
 
     <properties>
