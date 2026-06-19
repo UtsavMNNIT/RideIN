@@ -12,6 +12,14 @@ import { z } from "zod";
 const schema = z.object({
   NEXT_PUBLIC_API_BASE_URL: z.string().url(),
   NEXT_PUBLIC_WS_BASE_URL:  z.string().url(),
+  // Driver-service sits behind the api-gateway (:8080, paths /api/v1/drivers/**),
+  // unlike the demo REST base which points straight at notification-service. Keep
+  // it separate so driver calls reach the gateway without breaking the rider demo.
+  NEXT_PUBLIC_DRIVER_API_BASE_URL: z.string().url().default("http://localhost:8080"),
+  // Rider-service also sits behind the api-gateway (:8080, paths /api/v1/riders/**).
+  // Separate from the general API base so a direct-to-service dev setup (:8081) can
+  // override just the rider calls. Quotes (pricing) and trips ride on the gateway base.
+  NEXT_PUBLIC_RIDER_API_BASE_URL: z.string().url().default("http://localhost:8080"),
   NEXT_PUBLIC_MAP_PROVIDER: z.enum(["osm", "mapbox"]).default("osm"),
   NEXT_PUBLIC_MAPBOX_TOKEN: z.string().optional(),
   NEXT_PUBLIC_APP_NAME:     z.string().default("RideFlow"),
@@ -21,6 +29,8 @@ const schema = z.object({
 const parsed = schema.safeParse({
   NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
   NEXT_PUBLIC_WS_BASE_URL:  process.env.NEXT_PUBLIC_WS_BASE_URL,
+  NEXT_PUBLIC_DRIVER_API_BASE_URL: process.env.NEXT_PUBLIC_DRIVER_API_BASE_URL,
+  NEXT_PUBLIC_RIDER_API_BASE_URL: process.env.NEXT_PUBLIC_RIDER_API_BASE_URL,
   NEXT_PUBLIC_MAP_PROVIDER: process.env.NEXT_PUBLIC_MAP_PROVIDER,
   NEXT_PUBLIC_MAPBOX_TOKEN: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   NEXT_PUBLIC_APP_NAME:     process.env.NEXT_PUBLIC_APP_NAME,

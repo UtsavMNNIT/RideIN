@@ -1,138 +1,113 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, Send, Wifi, WifiOff, Zap, AlertCircle, CheckCircle2 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle } from "lucide-react";
 
-import { api, ApiError } from "@/lib/api/client";
-import { getSession, type Session } from "@/lib/auth/session";
-import { useWs } from "@/lib/ws/WsProvider";
-import { Button } from "@/ui/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/ui/components/ui/card";
+import { useActiveRide } from "@/application/ride/useActiveRide";
+import type { LatLng } from "@/domain/geo/types";
+import type { VehicleType } from "@/domain/ride/types";
+import { getSession } from "@/lib/auth/session";
+import { ActiveRidePanel } from "@/ui/components/ride/ActiveRidePanel";
+import { RideRequestPanel } from "@/ui/components/ride/RideRequestPanel";
+import { Skeleton } from "@/ui/components/ui/skeleton";
 
-/**
- * End-to-end demo page. Two trigger paths:
- *   1. DIRECT — POST → use case → Redis pub/sub → WebSocket
- *   2. KAFKA  — POST → Kafka → consumer → use case → Redis pub/sub → WebSocket
- *
- * The notification list below shows live frames as they arrive.
- */
+// Leaflet touches `window` at import time — load the map only on the client.
+const RiderMap = dynamic(() => import("@/ui/components/map/RiderMap"), {
+  ssr: false,
+  loading: () => <Skeleton className="h-[420px] w-full rounded-md" />,
+});
+
 export default function RiderHomePage() {
-  const { status, messages, clear } = useWs();
-  const [session, setSession] = useState<Session | null>(null);
-  const [busy, setBusy] = useState<"direct" | "kafka" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { ride, trip, start, reset } = useActiveRide();
 
-  // getSession reads cookies → must run on the client only.
-  useEffect(() => setSession(getSession()), []);
+  const [riderId, setRiderId] = useState<string | undefined>(undefined);
+  const [pickup, setPickup] = useState<LatLng | null>(null);
+  const [dropoff, setDropoff] = useState<LatLng | null>(null);
+  const [vehicleType, setVehicleType] = useState<VehicleType>("STANDARD");
+  const [geoError, setGeoError] = useState<string | null>(null);
 
-  const trigger = async (path: "DIRECT" | "KAFKA") => {
-    if (!session) return;
-    setError(null);
-    setBusy(path.toLowerCase() as "direct" | "kafka");
-    try {
-      await api.post("/v1/demo/notify", {
-        userId:  session.userId,
-        role:    session.role,
-        type:    "RIDE_MATCHED",
-        trigger: path,
-      });
-    } catch (e) {
-      const msg = e instanceof ApiError ? `HTTP ${e.status}` : String(e);
-      setError(`Trigger failed: ${msg}`);
-    } finally {
-      setBusy(null);
+  // Session id (rider UUID) is in a cookie — read on the client only.
+  useEffect(() => {
+    const session = getSession();
+    if (session?.role === "RIDER") setRiderId(session.userId);
+  }, []);
+
+  // Seed the pickup from the device location.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoError("Geolocation isn't available in this browser.");
+      return;
     }
-  };
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setPickup({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGeoError(null);
+      },
+      (err) => {
+        setGeoError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission denied — enable it to set your pickup."
+            : "Couldn't determine your location.",
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15_000 },
+    );
+  }, []);
+
+  // The ride lifecycle drives the layout: request form, then live tracking.
+  const tracking = Boolean(ride);
+
+  // While requesting, the route pins come from local state; once a ride is
+  // active, they come from the ride record so a refresh still draws the map.
+  const mapPickup = useMemo<LatLng | null>(
+    () => (ride ? { lat: ride.pickupLat, lng: ride.pickupLng } : pickup),
+    [ride, pickup],
+  );
+  const mapDropoff = useMemo<LatLng | null>(
+    () => (ride ? { lat: ride.dropoffLat, lng: ride.dropoffLng } : dropoff),
+    [ride, dropoff],
+  );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Live notifications</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Request a ride</h1>
         <p className="text-sm text-muted-foreground">
-          Trigger a ride-matched event and watch it arrive over WebSocket.
+          {tracking ? "Tracking your ride." : "Set your destination and pick a ride."}
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ConnectionDot status={status} />
-            Connection: <span className="font-mono text-sm">{status}</span>
-          </CardTitle>
-          <CardDescription>
-            User id:{" "}
-            <span className="font-mono text-xs">{session?.userId ?? "—"}</span>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-3">
-          <Button onClick={() => trigger("DIRECT")} disabled={!session || status !== "OPEN" || busy !== null}>
-            {busy === "direct" ? <Loader2 className="animate-spin" /> : <Zap />}
-            Trigger via direct path
-          </Button>
-          <Button
-            onClick={() => trigger("KAFKA")}
-            variant="outline"
-            disabled={!session || status !== "OPEN" || busy !== null}
-          >
-            {busy === "kafka" ? <Loader2 className="animate-spin" /> : <Send />}
-            Trigger via Kafka
-          </Button>
-          {messages.length > 0 ? (
-            <Button onClick={clear} variant="ghost">Clear list</Button>
-          ) : null}
-        </CardContent>
-        {error ? (
-          <CardContent className="flex items-center gap-2 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4" /> {error}
-          </CardContent>
-        ) : null}
-      </Card>
+      {geoError && !tracking ? (
+        <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {geoError}
+        </div>
+      ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Inbound stream</CardTitle>
-          <CardDescription>
-            Newest first. Frames arrive via {`{`}WebSocket → Redis pub/sub → consumer/use-case{`}`} —
-            the exact production path.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {messages.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No messages yet. Trigger one above.
-            </p>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <RiderMap
+            pickup={mapPickup}
+            dropoff={mapDropoff}
+            onPickDropoff={tracking ? undefined : setDropoff}
+          />
+        </div>
+        <div>
+          {ride ? (
+            <ActiveRidePanel ride={ride} trip={trip} onReset={reset} />
           ) : (
-            <ul className="divide-y">
-              {messages.map((m) => (
-                <li key={m.id} className="flex items-start gap-3 py-3">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 text-green-600 dark:text-green-400" />
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-muted-foreground">{m.type}</span>
-                      <span className="text-xs text-muted-foreground">
-                        · {new Date(m.createdAt).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <pre className="overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs">
-                      {JSON.stringify(m.payload, null, 2)}
-                    </pre>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <RideRequestPanel
+              riderId={riderId}
+              pickup={pickup}
+              dropoff={dropoff}
+              vehicleType={vehicleType}
+              onVehicleChange={setVehicleType}
+              onRequested={start}
+            />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
-}
-
-function ConnectionDot({ status }: { status: string }) {
-  if (status === "OPEN") {
-    return <Wifi className="h-4 w-4 text-green-600 dark:text-green-400" />;
-  }
-  if (status === "CONNECTING" || status === "RECONNECTING") {
-    return <Loader2 className="h-4 w-4 animate-spin text-amber-500" />;
-  }
-  return <WifiOff className="h-4 w-4 text-muted-foreground" />;
 }

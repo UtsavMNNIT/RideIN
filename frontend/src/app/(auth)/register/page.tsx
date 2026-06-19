@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 
+import { registerRider } from "@/application/rider/auth";
+import { ApiError } from "@/lib/api/client";
 import { createUser } from "@/lib/auth/demoUsers";
 import { signIn } from "@/lib/auth/session";
 import { isValidEmailFormat, verifyEmail } from "@/lib/auth/verifyEmail";
@@ -47,8 +49,11 @@ function RegisterForm() {
       setError("Please enter a valid email address.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    // Riders register against the real backend, which enforces an 8-char minimum
+    // (BCrypt). Keep the demo path's looser rule for any non-wired role.
+    const minLength = role === "RIDER" ? 8 : 6;
+    if (password.length < minLength) {
+      setError(`Password must be at least ${minLength} characters.`);
       return;
     }
     if (password !== confirm) {
@@ -74,6 +79,29 @@ function RegisterForm() {
     if (!check.configured) {
       // Provider key not set — let signup proceed but make the gap visible.
       toast.warning("Email verification isn't configured — skipping deliverability check.");
+    }
+
+    // Riders are created in the real backend, then sign in (with 2FA) to obtain a
+    // JWT — registration itself returns no token, so we route to the login step.
+    if (role === "RIDER") {
+      setChecking(true);
+      try {
+        await registerRider({ email, phone, fullName: name, password });
+        toast.success("Account created — please sign in to continue.");
+        router.push(`/login/credentials?role=RIDER`);
+      } catch (err) {
+        const status = err instanceof ApiError ? err.status : 0;
+        if (status === 409) {
+          setError("An account with that email already exists. Try signing in.");
+        } else if (status === 400) {
+          setError("Please check your details and try again.");
+        } else {
+          setError("Couldn't create your account right now. Please try again.");
+        }
+      } finally {
+        setChecking(false);
+      }
+      return;
     }
 
     const user = createUser({ name, email, phone, password, role });
