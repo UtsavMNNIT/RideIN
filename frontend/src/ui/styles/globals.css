@@ -8,15 +8,18 @@
    future theme overhaul is a single-file change.
    ============================================================= */
 @layer base {
+  /* Light theme = the Cabpro brand (matches the login/signup pages): green
+     primary, soft-grey "block" cards, faint green-tinted edges. Dark theme is
+     left untouched below. */
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
-    --card: 0 0% 100%;
+    --card: 214 16% 92%;
     --card-foreground: 222.2 84% 4.9%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 86 54% 51%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -24,15 +27,15 @@
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 86 40% 92%;
+    --accent-foreground: 86 64% 24%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 86 22% 80%;
+    --input: 86 20% 82%;
+    --ring: 86 54% 51%;
 
     --radius: 0.5rem;
 
@@ -78,5 +81,11 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
+  }
+  /* Light-only: the soft white→lime fade behind the whole app shell, echoing the
+     login/signup background. Dark mode keeps the solid background above. */
+  :root:not(.dark) body {
+    background-image: linear-gradient(to bottom, hsl(var(--background)) 55%, #d4eeb0);
+    background-attachment: fixed;
   }
 }
