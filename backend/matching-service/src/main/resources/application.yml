@@ -80,6 +80,10 @@ rideflow:
   dispatch:
     # K-nearest candidates pulled per attempt
     candidate-limit: 20
+    # A candidate whose last location heartbeat is older than this is treated as
+    # unavailable, even if it lingers in the geo index (meta TTL is 60s; we cut
+    # tighter so we never offer a ride to a driver who went dark mid-window).
+    candidate-staleness-ms: 30000
     # Radius expansion ladder
     attempts:
       - 3000

@@ -22,6 +22,7 @@
         <module>driver-service</module>
         <module>location-service</module>
         <module>rider-service</module>
+        <module>matching-service</module>
     </modules>
 
     <properties>

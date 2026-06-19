@@ -44,7 +44,12 @@ CREATE TABLE matching.rides (
 CREATE INDEX idx_rides_rider          ON matching.rides (rider_id, requested_at DESC);
 CREATE INDEX idx_rides_status_pending ON matching.rides (status, requested_at)
                                         WHERE status IN ('REQUESTED', 'DISPATCHING');
-CREATE INDEX idx_rides_assigned       ON matching.rides (assigned_driver_id)
+-- UNIQUE, not just an index: this is the authoritative second line of defence
+-- against double-booking a driver. Even if the Redis dispatch lock is lost
+-- (Redis restart, lease expiry under GC pause), two concurrent ASSIGNED rows
+-- for the same driver cannot both commit — the loser gets a constraint
+-- violation and the dispatcher falls through to the next-best candidate.
+CREATE UNIQUE INDEX idx_rides_assigned ON matching.rides (assigned_driver_id)
                                         WHERE status = 'ASSIGNED';
 
 -- -----------------------------------------------------------------------------
