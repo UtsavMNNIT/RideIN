@@ -15,6 +15,7 @@ import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
 import org.springframework.data.geo.Metrics;
 import org.springframework.data.geo.Point;
+import org.springframework.data.redis.connection.RedisGeoCommands.DistanceUnit;
 import org.springframework.data.redis.connection.RedisGeoCommands.GeoLocation;
 import org.springframework.data.redis.connection.RedisGeoCommands.GeoSearchCommandArgs;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -131,7 +132,7 @@ public class RedisDriverLocationRepository implements DriverLocationRepository {
         GeoResults<GeoLocation<String>> results = redis.opsForGeo().search(
                 geoKey,
                 GeoReference.fromCoordinate(center),
-                GeoShape.byRadius(new Distance(q.radiusMeters(), Metrics.METERS)),
+                GeoShape.byRadius(new Distance(q.radiusMeters(), DistanceUnit.METERS)),
                 args
         );
 

@@ -114,8 +114,9 @@ public class RedisConfig {
             @Qualifier("geoRedisConnectionFactory") RedisConnectionFactory cf) {
         StringRedisTemplate t = new StringRedisTemplate();
         t.setConnectionFactory(cf);
-        t.setKeySerializer(RedisSerializationContext.string().getKeySerializationPair().getReader().getClass()
-                == StringRedisSerializer.class ? new StringRedisSerializer() : new StringRedisSerializer());
+        // StringRedisTemplate already defaults every serializer to
+        // StringRedisSerializer; set it explicitly for clarity.
+        t.setKeySerializer(new StringRedisSerializer());
         t.afterPropertiesSet();
         return t;
     }
