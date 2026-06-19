@@ -19,6 +19,9 @@
     <modules>
         <module>shared/common-events</module>
         <module>notification-service</module>
+        <module>driver-service</module>
+        <module>location-service</module>
+        <module>rider-service</module>
     </modules>
 
     <properties>

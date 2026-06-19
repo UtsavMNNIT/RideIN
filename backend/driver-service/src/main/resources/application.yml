@@ -13,6 +13,33 @@ spring:
     serialization:
       write-dates-as-timestamps: false    # ISO-8601 everywhere
 
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres}:5432/${POSTGRES_DB:rideflow}?currentSchema=driver
+    username: ${DRIVER_DB_USER:driver_user}
+    password: ${DRIVER_DB_PASSWORD:driver_pass}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      pool-name: driver-pool
+
+  jpa:
+    properties:
+      hibernate:
+        default_schema: driver
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate                  # schema is owned by Flyway, never Hibernate
+
+  flyway:
+    enabled: true
+    schemas: driver
+    default-schema: driver
+    locations: classpath:db/migration
+
   kafka:
     # Internal listener — overridden per profile / via env.
     bootstrap-servers: ${KAFKA_BOOTSTRAP_INTERNAL:kafka:9092}
@@ -26,6 +53,18 @@ spring:
       acks: all
       # The full producer tuning lives in KafkaProducerConfig.java
       # to keep YAML lean and document each non-default in code.
+
+rideflow:
+  # CORS for HTTP endpoints. Production should pin to the deployed frontend origin.
+  cors:
+    allowed-origins: ${RIDEFLOW_CORS_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
+
+  security:
+    jwt:
+      # 32+ byte secret required for HS256. MUST be overridden in every real environment.
+      secret: ${DRIVER_JWT_SECRET:dev-only-driver-service-secret-change-me-please-0123456789}
+      issuer: ${DRIVER_JWT_ISSUER:rideflow-driver-service}
+      access-token-ttl: ${DRIVER_JWT_TTL:PT12H}
 
 server:
   port: 8083

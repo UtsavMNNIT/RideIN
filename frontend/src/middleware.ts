@@ -18,7 +18,7 @@ const PROTECTED_PREFIXES: Record<string, ReadonlyArray<string>> = {
 };
 
 const PUBLIC_PATHS = new Set<string>([
-  "/", "/login", "/register", "/about",
+  "/", "/login", "/login/credentials", "/register", "/forgot-password", "/about",
 ]);
 
 export function middleware(req: NextRequest) {
