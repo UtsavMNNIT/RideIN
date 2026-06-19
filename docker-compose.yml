@@ -228,6 +228,246 @@ services:
       start_period: 60s
 
   # =========================================================================
+  # rider-service — REST + transactional outbox (publishes rider.ride-requested)
+  # =========================================================================
+  rider-service:
+    <<: *common
+    image: rideflow/rider-service:dev
+    container_name: rideflow-rider-service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: rider-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-rideflow}
+      RIDER_DB_USER: rider_user
+      RIDER_DB_PASSWORD: ${RIDER_DB_PASSWORD:-rider_pass}
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      RIDER_JWT_SECRET: ${RIDER_JWT_SECRET:-dev-only-rider-service-secret-change-me-please-0123456789}
+      RIDER_JWT_ISSUER: ${RIDER_JWT_ISSUER:-rideflow-rider-service}
+      RIDEFLOW_CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+    ports:
+      - "127.0.0.1:8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8081' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =========================================================================
+  # driver-service — REST + JWT login (issues driver tokens)
+  # =========================================================================
+  driver-service:
+    <<: *common
+    image: rideflow/driver-service:dev
+    container_name: rideflow-driver-service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: driver-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-rideflow}
+      DRIVER_DB_USER: driver_user
+      DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD:-driver_pass}
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      DRIVER_JWT_SECRET: ${DRIVER_JWT_SECRET:-dev-only-driver-service-secret-change-me-please-0123456789}
+      DRIVER_JWT_ISSUER: ${DRIVER_JWT_ISSUER:-rideflow-driver-service}
+      RIDEFLOW_CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+    ports:
+      - "127.0.0.1:8083:8083"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8083' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =========================================================================
+  # location-service — Redis geo-index (GEOSEARCH) + Kafka DLQ consumer
+  # =========================================================================
+  location-service:
+    <<: *common
+    image: rideflow/location-service:dev
+    container_name: rideflow-location-service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: location-service
+    depends_on:
+      redis-geo:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      REDIS_GEO_HOST: redis-geo
+      REDIS_GEO_PORT: 6379
+      REDIS_CACHE_HOST: redis-cache
+      REDIS_CACHE_PORT: 6379
+    ports:
+      - "127.0.0.1:8082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8082' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =========================================================================
+  # matching-service — event-driven dispatch (Redis GEOSEARCH + DB outbox)
+  # =========================================================================
+  matching-service:
+    <<: *common
+    image: rideflow/matching-service:dev
+    container_name: rideflow-matching-service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: matching-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-geo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-rideflow}
+      MATCHING_DB_USER: matching_user
+      MATCHING_DB_PASSWORD: ${MATCHING_DB_PASSWORD:-matching_pass}
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+      REDIS_GEO_HOST: redis-geo
+      REDIS_GEO_PORT: 6379
+    ports:
+      - "127.0.0.1:8084:8084"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8084' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =========================================================================
+  # pricing-service — fare quoting + event-driven ride pricing
+  # =========================================================================
+  pricing-service:
+    <<: *common
+    image: rideflow/pricing-service:dev
+    container_name: rideflow-pricing-service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: pricing-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-rideflow}
+      PRICING_DB_USER: pricing_user
+      PRICING_DB_PASSWORD: ${PRICING_DB_PASSWORD:-pricing_pass}
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+    ports:
+      - "127.0.0.1:8085:8085"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8085' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =========================================================================
+  # api-gateway — single ingress: routing, JWT auth, rate limiting, CORS
+  # =========================================================================
+  api-gateway:
+    <<: *common
+    image: rideflow/api-gateway:dev
+    container_name: rideflow-api-gateway
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: api-gateway
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+      rider-service:
+        condition: service_started
+      driver-service:
+        condition: service_started
+      location-service:
+        condition: service_started
+      matching-service:
+        condition: service_started
+      pricing-service:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      GATEWAY_PORT: 8080
+      REDIS_CACHE_HOST: redis-cache
+      REDIS_CACHE_PORT: 6379
+      # JWT keyset — MUST match the secrets the auth services sign with.
+      RIDER_JWT_SECRET: ${RIDER_JWT_SECRET:-dev-only-rider-service-secret-change-me-please-0123456789}
+      DRIVER_JWT_SECRET: ${DRIVER_JWT_SECRET:-dev-only-driver-service-secret-change-me-please-0123456789}
+      RIDER_JWT_ISSUER: ${RIDER_JWT_ISSUER:-rideflow-rider-service}
+      DRIVER_JWT_ISSUER: ${DRIVER_JWT_ISSUER:-rideflow-driver-service}
+      # Upstream URIs (defaults already match the compose service names).
+      RIDER_SERVICE_URI: http://rider-service:8081
+      DRIVER_SERVICE_URI: http://driver-service:8083
+      LOCATION_SERVICE_URI: http://location-service:8082
+      MATCHING_SERVICE_URI: http://matching-service:8084
+      PRICING_SERVICE_URI: http://pricing-service:8085
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+      RATE_LIMIT_RPS: 20
+      RATE_LIMIT_BURST: 40
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  # =========================================================================
   # Kafka UI (optional — `docker compose --profile tools up`)
   # =========================================================================
   kafka-ui:

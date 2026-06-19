@@ -1,0 +1,153 @@
+# =============================================================================
+# api-gateway — the single ingress for the RideFlow platform.
+#
+#   Routing        spring.cloud.gateway.routes      (config-driven, ops-tunable)
+#   Rate limiting  RequestRateLimiter + Redis       (default-filter, per-caller)
+#   CORS           spring.cloud.gateway.globalcors  (terminated at the edge)
+#   JWT auth       JwtAuthenticationGlobalFilter    (rideflow.security.jwt.*)
+#   Logging        RequestLoggingGlobalFilter       (one access line per request)
+# =============================================================================
+spring:
+  application:
+    name: api-gateway
+
+  # Reactive Redis backs the rate-limiter token bucket. Reuses the shared cache
+  # Redis (NOT the geo Redis the location/matching services use for GEOSEARCH).
+  data:
+    redis:
+      host: ${REDIS_CACHE_HOST:redis-cache}
+      port: ${REDIS_CACHE_PORT:6379}
+      timeout: 2s
+
+  cloud:
+    gateway:
+      # ---- resilience: never let a slow upstream pin a Netty worker forever ----
+      httpclient:
+        connect-timeout: 2000              # ms to establish the upstream TCP conn
+        response-timeout: 10s              # whole-response timeout per upstream call
+        pool:
+          max-connections: 256
+          max-idle-time: 30s
+
+      # ---- rate limiting: applied to every route as a default filter ----
+      # Token bucket in Redis. Keyed per authenticated user, else per client IP
+      # (see RateLimitConfig#userOrIpKeyResolver).
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${RATE_LIMIT_RPS:20}      # steady-state req/s
+            redis-rate-limiter.burstCapacity: ${RATE_LIMIT_BURST:40}    # max burst
+            redis-rate-limiter.requestedTokens: 1
+            key-resolver: "#{@userOrIpKeyResolver}"
+
+      # ---- CORS: negotiated and terminated at the gateway ----
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns:
+              - ${CORS_ALLOWED_ORIGINS:*}
+            allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+            allowedHeaders: "*"
+            exposedHeaders: [X-Request-Id]
+            allowCredentials: true
+            maxAge: 3600
+
+      # ---- routing: one consistent external contract over inconsistent
+      #      internal base paths. Everything is exposed under /api/v1/**. ----
+      routes:
+        # rider-service serves /v1/riders/** → strip the /api prefix
+        - id: rider-service
+          uri: ${RIDER_SERVICE_URI:http://rider-service:8081}
+          predicates:
+            - Path=/api/v1/riders/**
+          filters:
+            - RewritePath=/api/(?<segment>.*), /$\{segment}
+
+        # driver-service serves /v1/drivers/**
+        - id: driver-service
+          uri: ${DRIVER_SERVICE_URI:http://driver-service:8083}
+          predicates:
+            - Path=/api/v1/drivers/**
+          filters:
+            - RewritePath=/api/(?<segment>.*), /$\{segment}
+
+        # pricing-service serves /v1/quotes/** and /v1/rate-cards/**
+        - id: pricing-service
+          uri: ${PRICING_SERVICE_URI:http://pricing-service:8085}
+          predicates:
+            - Path=/api/v1/quotes/**,/api/v1/rate-cards/**
+          filters:
+            - RewritePath=/api/(?<segment>.*), /$\{segment}
+
+        # location-service already serves under /api/v1/location/** → no rewrite
+        - id: location-service
+          uri: ${LOCATION_SERVICE_URI:http://location-service:8082}
+          predicates:
+            - Path=/api/v1/location/**
+
+        # matching-service already serves under /api/v1/dispatch/** → no rewrite
+        - id: matching-service
+          uri: ${MATCHING_SERVICE_URI:http://matching-service:8084}
+          predicates:
+            - Path=/api/v1/dispatch/**
+
+# =============================================================================
+# Gateway policy (our own knobs, distinct from spring.cloud.gateway.*)
+# =============================================================================
+rideflow:
+  security:
+    jwt:
+      # Keyset of trusted HS256 secrets. The rider and driver services currently
+      # sign with independent secrets; the gateway accepts a token that verifies
+      # under ANY of these. Converge these to one shared secret in prod, or move
+      # to RS256/JWKS (then this becomes a list of public keys).
+      secrets:
+        - ${RIDER_JWT_SECRET:dev-only-rider-service-secret-change-me-please-0123456789}
+        - ${DRIVER_JWT_SECRET:dev-only-driver-service-secret-change-me-please-0123456789}
+      # If non-empty, the token's `iss` must be one of these.
+      allowed-issuers:
+        - ${RIDER_JWT_ISSUER:rideflow-rider-service}
+        - ${DRIVER_JWT_ISSUER:rideflow-driver-service}
+
+  gateway:
+    forwarded-headers:
+      user-id: X-User-Id
+      role:    X-User-Role
+      email:   X-User-Email
+    # Endpoints reachable without a JWT. Everything else requires a valid token.
+    # (CORS preflight OPTIONS is always allowed, in code.)
+    public-endpoints:
+      - { method: POST, pattern: /api/v1/riders }            # rider registration
+      - { method: POST, pattern: /api/v1/riders/login }
+      - { method: POST, pattern: /api/v1/drivers }           # driver registration
+      - { method: POST, pattern: /api/v1/drivers/login }
+      - { method: POST, pattern: /api/v1/quotes }            # anonymous up-front fare estimate
+      - { method: GET,  pattern: /api/v1/rate-cards/** }     # public pricing info
+      - { method: GET,  pattern: /actuator/health/** }
+
+server:
+  port: ${GATEWAY_PORT:8080}
+  shutdown: graceful
+  forward-headers-strategy: native        # honour X-Forwarded-* from the LB
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics, gateway
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    gateway.access: INFO
+    com.rideflow: DEBUG
+    org.springframework.cloud.gateway: INFO
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'

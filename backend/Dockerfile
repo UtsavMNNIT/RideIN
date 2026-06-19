@@ -20,18 +20,32 @@ WORKDIR /workspace
 
 # Copy ONLY pom.xmls first so dependency resolution is cached separately from
 # source. Edits to a .java file won't re-download Maven deps.
+# All module poms first. The parent reactor lists every module, so Maven needs
+# each pom present to build the project graph — even for a single -pl build.
 COPY pom.xml                                ./
 COPY shared/common-events/pom.xml           shared/common-events/
 COPY notification-service/pom.xml           notification-service/
+COPY driver-service/pom.xml                 driver-service/
+COPY location-service/pom.xml               location-service/
+COPY rider-service/pom.xml                  rider-service/
+COPY matching-service/pom.xml               matching-service/
+COPY pricing-service/pom.xml                pricing-service/
+COPY api-gateway/pom.xml                    api-gateway/
 
-# Warm the local Maven repo. `--fail-never` so a missing optional module
-# doesn't abort dep resolution; the real build catches genuine breakage.
-RUN mvn -B -ntp -pl notification-service -am \
-        dependency:go-offline -DskipTests --fail-never || true
+# Warm the local Maven repo for the WHOLE reactor, so this layer is stable
+# across MODULE values. `--fail-never` so a transient miss doesn't abort the
+# warm-up; the real build below catches genuine breakage.
+RUN mvn -B -ntp dependency:go-offline -DskipTests --fail-never || true
 
 # Now bring in source. Cached layers above are untouched on a code-only change.
-COPY shared/common-events/   shared/common-events/
-COPY notification-service/   notification-service/
+COPY shared/             shared/
+COPY notification-service/ notification-service/
+COPY driver-service/     driver-service/
+COPY location-service/   location-service/
+COPY rider-service/      rider-service/
+COPY matching-service/   matching-service/
+COPY pricing-service/    pricing-service/
+COPY api-gateway/        api-gateway/
 
 # Build the requested module and its dependencies.
 RUN test -n "${MODULE}" || (echo "ERROR: --build-arg MODULE is required" && exit 1) && \
