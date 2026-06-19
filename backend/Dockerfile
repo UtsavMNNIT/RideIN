@@ -30,6 +30,7 @@ COPY location-service/pom.xml               location-service/
 COPY rider-service/pom.xml                  rider-service/
 COPY matching-service/pom.xml               matching-service/
 COPY pricing-service/pom.xml                pricing-service/
+COPY trip-service/pom.xml                   trip-service/
 COPY api-gateway/pom.xml                    api-gateway/
 
 # Warm the local Maven repo for the WHOLE reactor, so this layer is stable
@@ -45,6 +46,7 @@ COPY location-service/   location-service/
 COPY rider-service/      rider-service/
 COPY matching-service/   matching-service/
 COPY pricing-service/    pricing-service/
+COPY trip-service/       trip-service/
 COPY api-gateway/        api-gateway/
 
 # Build the requested module and its dependencies.
