@@ -12,6 +12,7 @@ set -euo pipefail
 : "${DRIVER_DB_PASSWORD:?must be set in compose env}"
 : "${MATCHING_DB_PASSWORD:?must be set in compose env}"
 : "${PRICING_DB_PASSWORD:?must be set in compose env}"
+: "${TRIP_DB_PASSWORD:?must be set in compose env}"
 
 echo "[rideflow-init] bootstrapping database '${POSTGRES_DB}'..."
 
@@ -33,6 +34,7 @@ psql -v ON_ERROR_STOP=1 \
     CREATE SCHEMA IF NOT EXISTS driver;
     CREATE SCHEMA IF NOT EXISTS matching;
     CREATE SCHEMA IF NOT EXISTS pricing;
+    CREATE SCHEMA IF NOT EXISTS trip;
 SQL
 
 # -------------------------------------------------------------------
@@ -73,5 +75,6 @@ create_role rider_user    "${RIDER_DB_PASSWORD}"    rider
 create_role driver_user   "${DRIVER_DB_PASSWORD}"   driver
 create_role matching_user "${MATCHING_DB_PASSWORD}" matching
 create_role pricing_user  "${PRICING_DB_PASSWORD}"  pricing
+create_role trip_user     "${TRIP_DB_PASSWORD}"     trip
 
-echo "[rideflow-init] done. schemas: rider, driver, matching, pricing"
+echo "[rideflow-init] done. schemas: rider, driver, matching, pricing, trip"

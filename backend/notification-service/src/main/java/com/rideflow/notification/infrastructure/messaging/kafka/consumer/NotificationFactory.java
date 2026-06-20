@@ -3,6 +3,7 @@ package com.rideflow.notification.infrastructure.messaging.kafka.consumer;
 import com.rideflow.notification.domain.model.Notification;
 import com.rideflow.notification.domain.model.NotificationType;
 import com.rideflow.notification.domain.model.Role;
+import com.rideflow.notification.infrastructure.messaging.kafka.serde.DispatchFailedPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideAssignedPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideLifecyclePayloadDto;
 
@@ -70,6 +71,37 @@ public class NotificationFactory {
         return List.of(
                 Notification.create(p.riderId(),  Role.RIDER,  NotificationType.RIDE_COMPLETED, p.rideId(), base),
                 Notification.create(p.driverId(), Role.DRIVER, NotificationType.RIDE_COMPLETED, p.rideId(), base)
+        );
+    }
+
+    public List<Notification> fromDispatchFailed(DispatchFailedPayloadDto p) {
+        // Only the rider is waiting on an answer; there is no driver to notify.
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("rideId",      p.rideId().toString());
+        m.put("vehicleType", p.vehicleType());
+        if (p.reason()           != null) m.put("reason",           p.reason());
+        if (p.attemptsMade()     != null) m.put("attemptsMade",     p.attemptsMade());
+        if (p.lastRadiusMeters() != null) m.put("lastRadiusMeters", p.lastRadiusMeters());
+        m.put("message", "No drivers available right now — please try again.");
+        if (p.failedAt() != null) m.put("occurredAt", String.valueOf(p.failedAt()));
+
+        return List.of(
+                Notification.create(p.riderId(), Role.RIDER, NotificationType.NO_DRIVERS_FOUND, p.rideId(), m)
+        );
+    }
+
+    public List<Notification> fromRideCancelled(RideLifecyclePayloadDto p) {
+        // The rider is notified the trip was cancelled. cancelledBy/reason ride
+        // on the wire but are not part of the lenient lifecycle DTO.
+        return List.of(
+                Notification.create(
+                        p.riderId(),
+                        Role.RIDER,
+                        NotificationType.RIDE_CANCELLED,
+                        p.rideId(),
+                        Map.of("rideId", p.rideId().toString(),
+                               "occurredAt", String.valueOf(p.occurredAt()))
+                )
         );
     }
 

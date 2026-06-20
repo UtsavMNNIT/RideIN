@@ -102,6 +102,35 @@ public record Driver(
     }
 
     /**
+     * Transition to ON_TRIP when an offered ride is accepted. Only a driver who
+     * is currently ONLINE can pick up a trip; anything else is a state error.
+     */
+    public Driver goOnTrip() {
+        if (availability == DriverAvailability.ON_TRIP) {
+            return this;
+        }
+        if (availability != DriverAvailability.ONLINE) {
+            throw new IllegalDriverStateException(id, "cannot start a trip unless ONLINE");
+        }
+        return withAvailability(DriverAvailability.ON_TRIP);
+    }
+
+    /**
+     * Transition back to ONLINE when the trip ends (completed or cancelled).
+     *
+     * <p><b>Tolerant by design:</b> if the driver is not ON_TRIP this is a no-op
+     * returning {@code this}, rather than throwing. The completed/cancelled
+     * events that drive this are at-least-once; a duplicate or late delivery must
+     * not fail and DLQ-loop.
+     */
+    public Driver endTrip() {
+        if (availability != DriverAvailability.ON_TRIP) {
+            return this;
+        }
+        return withAvailability(DriverAvailability.ONLINE);
+    }
+
+    /**
      * Record a new location reading. Only meaningful while the driver is
      * accepting work — an OFFLINE driver pushing locations is a client bug.
      */

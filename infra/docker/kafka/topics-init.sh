@@ -59,12 +59,18 @@ create_topic "ride.cancelled"                  12  "${D30}"
 create_topic "pricing.fare-quoted"             12  "${D7}"
 
 # ---- Dead-letter queues ----
+# One per topic that has a consumer (a poison message is routed to <topic>.DLQ;
+# auto-create is disabled, so every consumed topic needs its DLQ provisioned).
 for t in \
     rider.ride-requested \
     matching.ride-assigned \
+    matching.ride-dispatch-failed \
     driver.location-updated \
     ride.accepted \
+    ride.rejected \
+    ride.started \
     ride.completed \
+    ride.cancelled \
     pricing.fare-quoted
 do
     create_topic "${t}.DLQ" 3 "${D14}"

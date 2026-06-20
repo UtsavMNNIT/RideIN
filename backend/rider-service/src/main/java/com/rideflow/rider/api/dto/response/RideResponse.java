@@ -4,12 +4,14 @@ import com.rideflow.rider.domain.model.Ride;
 import com.rideflow.rider.domain.model.RideStatus;
 import com.rideflow.rider.domain.model.VehicleType;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Public projection of a {@link Ride}, used for both the request response and
- * ride-history entries.
+ * ride-history entries. Includes the projected driver/fare/metrics once the
+ * downstream events have landed (null until then).
  */
 public record RideResponse(
         UUID        id,
@@ -20,7 +22,13 @@ public record RideResponse(
         double      dropoffLng,
         VehicleType vehicleType,
         RideStatus  status,
-        Instant     requestedAt
+        UUID        assignedDriverId,
+        BigDecimal  fareTotal,
+        String      currency,
+        Integer     finalDistanceMeters,
+        Integer     finalDurationSeconds,
+        Instant     requestedAt,
+        Instant     updatedAt
 ) {
 
     public static RideResponse from(Ride r) {
@@ -28,6 +36,9 @@ public record RideResponse(
                 r.id(), r.riderId(),
                 r.pickup().lat(),  r.pickup().lng(),
                 r.dropoff().lat(), r.dropoff().lng(),
-                r.vehicleType(), r.status(), r.requestedAt());
+                r.vehicleType(), r.status(),
+                r.assignedDriverId(), r.fareTotal(), r.currency(),
+                r.finalDistanceMeters(), r.finalDurationSeconds(),
+                r.requestedAt(), r.updatedAt());
     }
 }

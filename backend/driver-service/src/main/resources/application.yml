@@ -53,6 +53,23 @@ spring:
       acks: all
       # The full producer tuning lives in KafkaProducerConfig.java
       # to keep YAML lean and document each non-default in code.
+    consumer:
+      # Ride-lifecycle listener that syncs driver availability (ON_TRIP / ONLINE).
+      group-id: driver-service
+      client-id: driver-service-consumer
+      auto-offset-reset: latest
+      enable-auto-commit: false
+      max-poll-records: 100
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        session.timeout.ms: 30000
+        max.poll.interval.ms: 300000
+    listener:
+      ack-mode: manual_immediate
+      concurrency: 2
+      missing-topics-fatal: false
 
 rideflow:
   # CORS for HTTP endpoints. Production should pin to the deployed frontend origin.

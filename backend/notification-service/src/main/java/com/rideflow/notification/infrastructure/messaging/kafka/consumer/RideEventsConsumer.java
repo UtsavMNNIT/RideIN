@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rideflow.common.events.Topics;
 import com.rideflow.notification.application.usecase.PublishNotificationUseCase;
 import com.rideflow.notification.domain.model.Notification;
+import com.rideflow.notification.infrastructure.messaging.kafka.serde.DispatchFailedPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.EnvelopeDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideAssignedPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideLifecyclePayloadDto;
@@ -57,8 +58,10 @@ public class RideEventsConsumer {
     @KafkaListener(
             topics = {
                     Topics.MATCHING_RIDE_ASSIGNED,
+                    Topics.MATCHING_DISPATCH_FAILED,
                     Topics.RIDE_STARTED,
-                    Topics.RIDE_COMPLETED
+                    Topics.RIDE_COMPLETED,
+                    Topics.RIDE_CANCELLED
             },
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "kafkaListenerContainerFactory"
@@ -77,6 +80,16 @@ public class RideEventsConsumer {
                 RideAssignedPayloadDto p = readPayload(envelope, RideAssignedPayloadDto.class);
                 validateAssigned(p);
                 yield factory.fromRideAssigned(p);
+            }
+            case Topics.MATCHING_DISPATCH_FAILED -> {
+                DispatchFailedPayloadDto p = readPayload(envelope, DispatchFailedPayloadDto.class);
+                validateDispatchFailed(p);
+                yield factory.fromDispatchFailed(p);
+            }
+            case Topics.RIDE_CANCELLED -> {
+                RideLifecyclePayloadDto p = readPayload(envelope, RideLifecyclePayloadDto.class);
+                validateLifecycle(p);
+                yield factory.fromRideCancelled(p);
             }
             case Topics.RIDE_STARTED -> {
                 RideLifecyclePayloadDto p = readPayload(envelope, RideLifecyclePayloadDto.class);
@@ -132,6 +145,13 @@ public class RideEventsConsumer {
     private void validateLifecycle(RideLifecyclePayloadDto p) {
         if (p.rideId() == null || p.riderId() == null || p.driverId() == null) {
             throw new IllegalArgumentException("Ride lifecycle event missing rideId/riderId/driverId");
+        }
+    }
+
+    private void validateDispatchFailed(DispatchFailedPayloadDto p) {
+        // No driverId — dispatch failed because none was found.
+        if (p.rideId() == null || p.riderId() == null) {
+            throw new IllegalArgumentException("RideDispatchFailed missing rideId/riderId");
         }
     }
 }

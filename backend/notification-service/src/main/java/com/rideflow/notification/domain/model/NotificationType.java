@@ -12,5 +12,9 @@ public enum NotificationType {
     /** The driver has started the trip (pickup complete). */
     RIDE_STARTED,
     /** The trip has been completed. */
-    RIDE_COMPLETED
+    RIDE_COMPLETED,
+    /** Dispatch exhausted the radius ladder — no driver could be matched. */
+    NO_DRIVERS_FOUND,
+    /** The trip was cancelled by the rider or driver. */
+    RIDE_CANCELLED
 }

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -32,6 +33,11 @@ public class JpaRideRepository implements RideRepository {
     }
 
     @Override
+    public Optional<Ride> findById(UUID rideId) {
+        return jpa.findById(rideId).map(JpaRideRepository::toDomain);
+    }
+
+    @Override
     public List<Ride> findByRider(UUID riderId, int page, int size) {
         return jpa.findByRider(riderId, PageRequest.of(page, size))
                   .stream()
@@ -44,7 +50,10 @@ public class JpaRideRepository implements RideRepository {
                 r.id(), r.riderId(),
                 r.pickup().lat(),  r.pickup().lng(),
                 r.dropoff().lat(), r.dropoff().lng(),
-                r.vehicleType(), r.status(), r.requestedAt(), r.createdAt(), r.updatedAt());
+                r.vehicleType(), r.status(),
+                r.assignedDriverId(), r.matchScore(), r.fareTotal(), r.currency(),
+                r.finalDistanceMeters(), r.finalDurationSeconds(),
+                r.requestedAt(), r.createdAt(), r.updatedAt());
     }
 
     private static Ride toDomain(RideEntity e) {
@@ -52,7 +61,9 @@ public class JpaRideRepository implements RideRepository {
                 e.getId(), e.getRiderId(),
                 new GeoPoint(e.getPickupLat(),  e.getPickupLng()),
                 new GeoPoint(e.getDropoffLat(), e.getDropoffLng()),
-                e.getVehicleType(), e.getStatus(), e.getRequestedAt(),
-                e.getCreatedAt(), e.getUpdatedAt());
+                e.getVehicleType(), e.getStatus(),
+                e.getAssignedDriverId(), e.getMatchScore(), e.getFareTotal(), e.getCurrency(),
+                e.getFinalDistanceMeters(), e.getFinalDurationSeconds(),
+                e.getRequestedAt(), e.getCreatedAt(), e.getUpdatedAt());
     }
 }
