@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Route } from "next";
 import type { LucideIcon } from "lucide-react";
 import {
   Home, MapPin, Clock, Wallet, Gauge, SlidersHorizontal, Flame,
@@ -46,7 +47,9 @@ export function AppSidebar({ role, className }: { role: Role; className?: string
           return (
             <Link
               key={item.href}
-              href={item.href}
+              // Some nav targets (earnings, tariffs, surge) aren't built yet, so
+              // href is a plain string cast to the typed-routes Route type.
+              href={item.href as Route}
               className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <Icon className="h-4 w-4" />
