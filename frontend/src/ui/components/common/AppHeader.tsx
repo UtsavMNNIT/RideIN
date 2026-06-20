@@ -4,6 +4,7 @@ import { CarFront } from "lucide-react";
 import { env } from "@/config/env";
 import { cn } from "@/lib/utils/cn";
 import { RoleBadge, type Role } from "@/ui/components/common/RoleBadge";
+import { ThemeToggle } from "@/ui/components/common/ThemeToggle";
 
 /**
  * Top chrome rendered inside every authenticated layout. Header is a Server
@@ -24,8 +25,9 @@ export function AppHeader({ role, className }: { role: Role; className?: string 
       </Link>
 
       <div className="flex items-center gap-3">
+        <ThemeToggle />
         <RoleBadge role={role} />
-        {/* user menu, theme toggle, connection indicator — Phase F-2 / F-5 */}
+        {/* user menu, connection indicator — Phase F-2 / F-5 */}
       </div>
     </header>
   );

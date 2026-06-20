@@ -5,10 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 
-import type { DemoUser } from "@/lib/auth/demoUsers";
-import { verifyCredentials } from "@/lib/auth/demoUsers";
+import { loginDriver } from "@/application/driver/auth";
+import { loginRider } from "@/application/rider/auth";
+import type { LoginResponse } from "@/domain/driver/types";
+import type { RiderLoginResponse } from "@/domain/rider/types";
+import { ApiError } from "@/lib/api/client";
 import { sendOtp, verifyOtp } from "@/lib/auth/otp";
-import { signIn } from "@/lib/auth/session";
+import { signInDriver, signInRider } from "@/lib/auth/session";
 import { isValidEmailFormat, verifyEmail } from "@/lib/auth/verifyEmail";
 import type { Role } from "@/ui/components/common/RoleBadge";
 import { Button } from "@/ui/components/ui/button";
@@ -48,7 +51,9 @@ function CredentialsForm() {
   const [checking, setChecking] = useState(false);
 
   // Step 2 (2FA) state
-  const [pendingUser, setPendingUser] = useState<DemoUser | null>(null);
+  // The real backend login result carried across the 2FA step (one per role).
+  const [driverLogin, setDriverLogin] = useState<LoginResponse | null>(null);
+  const [riderLogin, setRiderLogin] = useState<RiderLoginResponse | null>(null);
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [sending, setSending] = useState(false);
@@ -96,28 +101,36 @@ function CredentialsForm() {
       return;
     }
 
-    const result = verifyCredentials(email, password, role);
-    switch (result.status) {
-      case "ok":
-        // Password is the first factor — now require the SMS second factor.
-        setPendingUser(result.user);
-        setPhone(result.user.phone);
-        setOtp("");
-        setStep("otp");
-        await deliverCode(result.user.phone);
-        break;
-      case "no-user":
+    // Both roles authenticate against the real backend. Password is the first
+    // factor; the SMS code (delivered to the account's phone) is the second.
+    setChecking(true);
+    try {
+      let accountPhone: string;
+      if (role === "DRIVER") {
+        const res = await loginDriver(email, password);
+        setDriverLogin(res);
+        accountPhone = res.driver.phone;
+      } else {
+        const res = await loginRider(email, password);
+        setRiderLogin(res);
+        accountPhone = res.rider.phone;
+      }
+      setPhone(accountPhone);
+      setOtp("");
+      setStep("otp");
+      await deliverCode(accountPhone);
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      if (status === 401 || status === 403) {
+        setError("Incorrect email or password.");
+      } else if (status === 404) {
         setNotFound(true);
-        setError("No account found with that email. Sign up to get started.");
-        break;
-      case "bad-password":
-        setError("Incorrect password. Try again or reset it below.");
-        break;
-      case "wrong-role":
-        setError(
-          `That account is registered as a ${result.user.role.toLowerCase()}, not a ${role.toLowerCase()}.`,
-        );
-        break;
+        setError(`No ${role.toLowerCase()} account found with that email. Sign up to get started.`);
+      } else {
+        setError("Couldn't sign you in right now. Please try again.");
+      }
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -131,9 +144,22 @@ function CredentialsForm() {
       setError(OTP_ERRORS[res.reason ?? "mismatch"] ?? "Couldn't verify that code.");
       return;
     }
-    signIn(role);
-    toast.success(`Welcome back, ${pendingUser?.name ?? "rider"}!`);
-    router.push(landingFor(role));
+    if (role === "DRIVER" && driverLogin) {
+      // Persist the real backend session (driver UUID + JWT) and head to the dashboard.
+      signInDriver(driverLogin.driver, driverLogin.accessToken);
+      toast.success(`Welcome back, ${driverLogin.driver.fullName}!`);
+      router.push("/dashboard");
+      return;
+    }
+    if (riderLogin) {
+      // Persist the real backend session (rider UUID + JWT) and head home.
+      signInRider(riderLogin.rider, riderLogin.accessToken);
+      toast.success(`Welcome back, ${riderLogin.rider.fullName}!`);
+      router.push(landingFor(role));
+      return;
+    }
+    setError("Your session expired. Please sign in again.");
+    setStep("password");
   };
 
   return (
