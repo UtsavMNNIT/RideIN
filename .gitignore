@@ -34,3 +34,6 @@ docker-compose.override.yml
 
 # Docker tutorial sample (not part of this project)
 welcome-to-docker/
+
+# Stray image files at repo root (not project assets)
+/*.jpg
