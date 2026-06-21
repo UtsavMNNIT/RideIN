@@ -1,5 +1,9 @@
 import { api } from "@/lib/api/client";
-import type { LoginResponse } from "@/domain/driver/types";
+import type {
+  DriverResponse,
+  LoginResponse,
+  RegisterDriverRequest,
+} from "@/domain/driver/types";
 
 import { driverUrl } from "./endpoints";
 
@@ -10,4 +14,13 @@ import { driverUrl } from "./endpoints";
  */
 export function loginDriver(email: string, password: string): Promise<LoginResponse> {
   return api.post<LoginResponse>(driverUrl("/login"), { email, password });
+}
+
+/**
+ * Register a new driver. Returns the created profile (no token — the caller then
+ * proceeds through the 2FA + login step, exactly like rider registration).
+ * Throws {@link ApiError} (409 = email already registered).
+ */
+export function registerDriver(body: RegisterDriverRequest): Promise<DriverResponse> {
+  return api.post<DriverResponse>(driverUrl(""), body);
 }
