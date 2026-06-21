@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Car, UserRound } from "lucide-react";
+import { Car, ShieldCheck, UserRound } from "lucide-react";
 
+import { signIn } from "@/lib/auth/session";
 import { Button } from "@/ui/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/ui/components/ui/card";
 
@@ -22,6 +23,14 @@ export default function LoginPage() {
     // Hand off to the credentials screen; the chosen role rides along as a
     // query param so that screen knows which app to drop the user into.
     router.push(`/login/credentials?role=${role}`);
+  };
+
+  // The operator console has no backend auth yet, so admin access is demo-grade:
+  // set the ADMIN role cookie and go straight to the overview. Its data sources
+  // (rate-cards, quotes) are public at the gateway, so no JWT is required.
+  const enterAdmin = () => {
+    signIn("ADMIN");
+    router.push("/overview");
   };
 
   return (
@@ -70,6 +79,15 @@ export default function LoginPage() {
           <Car className="h-4 w-4" />
           Login as Driver
         </Button>
+
+        <button
+          type="button"
+          onClick={enterAdmin}
+          className="mt-1 inline-flex items-center justify-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          <ShieldCheck className="h-3.5 w-3.5" />
+          Enter operator console (demo)
+        </button>
       </CardContent>
     </Card>
   );

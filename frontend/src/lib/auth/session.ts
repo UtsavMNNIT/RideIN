@@ -14,6 +14,12 @@ export type Session = { userId: string; role: Role };
 
 const COOKIE_ROLE = "rf_role";
 const COOKIE_USER = "rf_userId";
+// The JWT is mirrored into a cookie (in addition to localStorage, which the api
+// client reads) so the edge middleware can cryptographically verify it. Not
+// HttpOnly — the client still needs to read the bearer for fetch; this is no
+// more XSS-exposed than the existing localStorage copy. A fully-hardened setup
+// (HttpOnly cookie + API calls proxied server-side) is a later refactor.
+const COOKIE_TOKEN = "rf_token";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 // Demo-grade token + profile storage. A real build keeps the JWT in an HttpOnly
@@ -71,6 +77,7 @@ export function signIn(role: Role): Session {
 export function signInDriver(driver: DriverResponse, token: string): Session {
   writeCookie(COOKIE_ROLE, "DRIVER", COOKIE_MAX_AGE);
   writeCookie(COOKIE_USER, driver.id, COOKIE_MAX_AGE);
+  writeCookie(COOKIE_TOKEN, token, COOKIE_MAX_AGE);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STORE_TOKEN, token);
     window.localStorage.setItem(STORE_DRIVER_PROFILE, JSON.stringify(driver));
@@ -86,6 +93,7 @@ export function signInDriver(driver: DriverResponse, token: string): Session {
 export function signInRider(rider: RiderResponse, token: string): Session {
   writeCookie(COOKIE_ROLE, "RIDER", COOKIE_MAX_AGE);
   writeCookie(COOKIE_USER, rider.id, COOKIE_MAX_AGE);
+  writeCookie(COOKIE_TOKEN, token, COOKIE_MAX_AGE);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(STORE_TOKEN, token);
     window.localStorage.setItem(STORE_RIDER_PROFILE, JSON.stringify(rider));
@@ -138,6 +146,7 @@ export function setRiderProfile(rider: RiderResponse): void {
 export function signOut() {
   deleteCookie(COOKIE_ROLE);
   deleteCookie(COOKIE_USER);
+  deleteCookie(COOKIE_TOKEN);
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(STORE_TOKEN);
     window.localStorage.removeItem(STORE_DRIVER_PROFILE);

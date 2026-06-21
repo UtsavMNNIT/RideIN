@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, Loader2, MapPin, Navigation, Wifi, WifiOff, X } from "lucide-react";
+import { Check, Loader2, MapPin, Navigation, X } from "lucide-react";
 
 import type { DriverTripContext } from "@/application/driver/useDriverTrip";
 import { useWs } from "@/lib/ws/WsProvider";
 import type { WsMessage } from "@/lib/ws/WsClient";
+import { ConnectionDot } from "@/ui/components/common/ConnectionIndicator";
 import { Button } from "@/ui/components/ui/button";
 import {
   Card,
@@ -138,14 +139,4 @@ export function LiveRideOffers({
       </CardContent>
     </Card>
   );
-}
-
-function ConnectionDot({ status }: { status: string }) {
-  if (status === "OPEN") {
-    return <Wifi className="h-4 w-4 text-green-600 dark:text-green-400" />;
-  }
-  if (status === "CONNECTING" || status === "RECONNECTING") {
-    return <Loader2 className="h-4 w-4 animate-spin text-amber-500" />;
-  }
-  return <WifiOff className="h-4 w-4 text-muted-foreground" />;
 }

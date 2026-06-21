@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import type { Route } from "next";
+import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Home, MapPin, Clock, Wallet, Gauge, SlidersHorizontal, Flame,
@@ -27,13 +30,10 @@ const NAV_BY_ROLE: Record<Role, ReadonlyArray<NavItem>> = {
   ],
 };
 
-/**
- * Static role-aware nav. Server Component — active-link highlighting is
- * deferred to the moment we add `usePathname` (Client) in a future phase.
- * Keeping it Server now means zero client JS for the sidebar.
- */
+/** Role-aware nav with active-route highlighting (Client — reads usePathname). */
 export function AppSidebar({ role, className }: { role: Role; className?: string }) {
   const items = NAV_BY_ROLE[role];
+  const pathname = usePathname();
   return (
     <aside
       className={cn(
@@ -44,13 +44,21 @@ export function AppSidebar({ role, className }: { role: Role; className?: string
       <nav className="flex flex-col gap-1 p-3">
         {items.map((item) => {
           const Icon = item.icon;
+          const active =
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}
               // Some nav targets (earnings, tariffs, surge) aren't built yet, so
               // href is a plain string cast to the typed-routes Route type.
               href={item.href as Route}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                active
+                  ? "bg-accent font-medium text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              )}
             >
               <Icon className="h-4 w-4" />
               {item.label}

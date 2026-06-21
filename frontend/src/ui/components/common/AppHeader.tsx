@@ -3,8 +3,10 @@ import { CarFront } from "lucide-react";
 
 import { env } from "@/config/env";
 import { cn } from "@/lib/utils/cn";
+import { ConnectionIndicator } from "@/ui/components/common/ConnectionIndicator";
 import { RoleBadge, type Role } from "@/ui/components/common/RoleBadge";
 import { ThemeToggle } from "@/ui/components/common/ThemeToggle";
+import { UserMenu } from "@/ui/components/common/UserMenu";
 
 /**
  * Top chrome rendered inside every authenticated layout. Header is a Server
@@ -25,9 +27,10 @@ export function AppHeader({ role, className }: { role: Role; className?: string 
       </Link>
 
       <div className="flex items-center gap-3">
+        <ConnectionIndicator />
         <ThemeToggle />
         <RoleBadge role={role} />
-        {/* user menu, connection indicator — Phase F-2 / F-5 */}
+        <UserMenu />
       </div>
     </header>
   );
