@@ -123,7 +123,13 @@ export type TripResponse = {
   cancelledAt?:          string | null;
 };
 
-/** Body of POST /v1/trips/{rideId}/cancel (rider-initiated). */
+/** Body of POST /v1/trips/{rideId}/cancel (rider- or driver-initiated). */
 export type CancelTripRequest = {
   reason?: string;
+};
+
+/** Body of POST /v1/trips/{rideId}/complete (driver-initiated). Both required. */
+export type CompleteTripRequest = {
+  finalDistanceMeters:  number;
+  finalDurationSeconds: number;
 };

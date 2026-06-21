@@ -1,9 +1,11 @@
 "use client";
 
-import { Loader2, Wifi, WifiOff, Car } from "lucide-react";
+import { Check, Loader2, MapPin, Navigation, Wifi, WifiOff, X } from "lucide-react";
 
+import type { DriverTripContext } from "@/application/driver/useDriverTrip";
 import { useWs } from "@/lib/ws/WsProvider";
 import type { WsMessage } from "@/lib/ws/WsClient";
+import { Button } from "@/ui/components/ui/button";
 import {
   Card,
   CardContent,
@@ -12,18 +14,16 @@ import {
   CardTitle,
 } from "@/ui/components/ui/card";
 
-const RIDE_TYPES = new Set([
-  "RIDE_MATCHED",
-  "RIDE_STARTED",
-  "RIDE_COMPLETED",
-  "RIDE_CANCELLED",
-]);
-
-const TYPE_LABEL: Record<string, string> = {
-  RIDE_MATCHED:   "New ride offer",
-  RIDE_STARTED:   "Trip started",
-  RIDE_COMPLETED: "Trip completed",
-  RIDE_CANCELLED: "Ride cancelled",
+type Props = {
+  /** rideIds already accepted/declined (or the active trip) — filtered out. */
+  handled: Set<string>;
+  onAccept: (ctx: DriverTripContext) => void;
+  onDecline: (rideId: string) => void;
+  /** rideId currently being accepted / declined, for per-row spinners. */
+  acceptingId?: string;
+  decliningId?: string;
+  /** Any action in flight — disables the other buttons. */
+  busy?: boolean;
 };
 
 function num(payload: Record<string, unknown>, key: string): number | null {
@@ -31,23 +31,45 @@ function num(payload: Record<string, unknown>, key: string): number | null {
   return typeof v === "number" ? v : null;
 }
 
-function fare(m: WsMessage): string | null {
-  const amount = num(m.payload, "estimatedFare");
-  if (amount === null) return null;
-  const currency = typeof m.payload.currency === "string" ? m.payload.currency : "";
-  return `${currency} ${amount.toFixed(2)}`.trim();
+/** Build the trip context from a RIDE_MATCHED frame, or null if coords missing. */
+function toContext(m: WsMessage): DriverTripContext | null {
+  const rideId = m.rideId ?? (typeof m.payload.rideId === "string" ? m.payload.rideId : null);
+  const pickupLat = num(m.payload, "pickupLat");
+  const pickupLng = num(m.payload, "pickupLng");
+  const dropoffLat = num(m.payload, "dropoffLat");
+  const dropoffLng = num(m.payload, "dropoffLng");
+  if (
+    !rideId ||
+    pickupLat === null ||
+    pickupLng === null ||
+    dropoffLat === null ||
+    dropoffLng === null
+  ) {
+    return null;
+  }
+  return { rideId, pickupLat, pickupLng, dropoffLat, dropoffLng };
 }
 
-function coord(m: WsMessage, latKey: string, lngKey: string): string | null {
-  const lat = num(m.payload, latKey);
-  const lng = num(m.payload, lngKey);
-  if (lat === null || lng === null) return null;
-  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-}
-
-export function LiveRideOffers() {
+export function LiveRideOffers({
+  handled,
+  onAccept,
+  onDecline,
+  acceptingId,
+  decliningId,
+  busy,
+}: Props) {
   const { status, messages } = useWs();
-  const offers = messages.filter((m) => RIDE_TYPES.has(m.type));
+
+  // Newest first; one card per ride (a ride can be re-offered), un-handled only.
+  const seen = new Set<string>();
+  const offers: { m: WsMessage; ctx: DriverTripContext }[] = [];
+  for (const m of messages) {
+    if (m.type !== "RIDE_MATCHED") continue;
+    const ctx = toContext(m);
+    if (!ctx || handled.has(ctx.rideId) || seen.has(ctx.rideId)) continue;
+    seen.add(ctx.rideId);
+    offers.push({ m, ctx });
+  }
 
   return (
     <Card>
@@ -56,9 +78,7 @@ export function LiveRideOffers() {
           <ConnectionDot status={status} />
           Ride offers
         </CardTitle>
-        <CardDescription>
-          Live offers arrive here while you&apos;re online.
-        </CardDescription>
+        <CardDescription>Live offers arrive here while you&apos;re online.</CardDescription>
       </CardHeader>
       <CardContent>
         {offers.length === 0 ? (
@@ -66,30 +86,49 @@ export function LiveRideOffers() {
             No offers yet. Go online and stay put — they&apos;ll show up here.
           </p>
         ) : (
-          <ul className="divide-y">
-            {offers.map((m) => {
-              const pickup = coord(m, "pickupLat", "pickupLng");
-              const dropoff = coord(m, "dropoffLat", "dropoffLng");
-              const price = fare(m);
+          <ul className="space-y-3">
+            {offers.map(({ m, ctx }) => {
+              const accepting = acceptingId === ctx.rideId;
+              const declining = decliningId === ctx.rideId;
               return (
-                <li key={m.id} className="flex items-start gap-3 py-3">
-                  <Car className="mt-0.5 h-4 w-4 text-[#5b8a1e]" />
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">
-                        {TYPE_LABEL[m.type] ?? m.type}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(m.createdAt).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className="space-y-0.5 text-xs text-muted-foreground">
-                      {pickup ? <p>Pickup: {pickup}</p> : null}
-                      {dropoff ? <p>Dropoff: {dropoff}</p> : null}
-                      {price ? (
-                        <p className="font-medium text-foreground">Est. fare: {price}</p>
-                      ) : null}
-                    </div>
+                <li key={m.id} className="rounded-md border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-sm font-medium">
+                      <Navigation className="h-4 w-4 text-[#5b8a1e]" />
+                      New ride offer
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(m.createdAt).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                    <p className="flex items-center gap-1">
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      Pickup: {ctx.pickupLat.toFixed(4)}, {ctx.pickupLng.toFixed(4)}
+                    </p>
+                    <p className="flex items-center gap-1">
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      Dropoff: {ctx.dropoffLat.toFixed(4)}, {ctx.dropoffLng.toFixed(4)}
+                    </p>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      className="flex-1"
+                      disabled={busy}
+                      onClick={() => onAccept(ctx)}
+                    >
+                      {accepting ? <Loader2 className="animate-spin" /> : <Check />}
+                      Accept
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      disabled={busy}
+                      onClick={() => onDecline(ctx.rideId)}
+                    >
+                      {declining ? <Loader2 className="animate-spin" /> : <X />}
+                      Decline
+                    </Button>
                   </div>
                 </li>
               );
