@@ -6,6 +6,7 @@ import com.rideflow.notification.application.usecase.PublishNotificationUseCase;
 import com.rideflow.notification.domain.model.Notification;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.DispatchFailedPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.EnvelopeDto;
+import com.rideflow.notification.infrastructure.messaging.kafka.serde.PaymentSettledPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideAssignedPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideLifecyclePayloadDto;
 
@@ -61,7 +62,8 @@ public class RideEventsConsumer {
                     Topics.MATCHING_DISPATCH_FAILED,
                     Topics.RIDE_STARTED,
                     Topics.RIDE_COMPLETED,
-                    Topics.RIDE_CANCELLED
+                    Topics.RIDE_CANCELLED,
+                    Topics.PAYMENT_SETTLED
             },
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "kafkaListenerContainerFactory"
@@ -100,6 +102,11 @@ public class RideEventsConsumer {
                 RideLifecyclePayloadDto p = readPayload(envelope, RideLifecyclePayloadDto.class);
                 validateLifecycle(p);
                 yield factory.fromRideCompleted(p);
+            }
+            case Topics.PAYMENT_SETTLED -> {
+                PaymentSettledPayloadDto p = readPayload(envelope, PaymentSettledPayloadDto.class);
+                validatePaymentSettled(p);
+                yield factory.fromPaymentSettled(p);
             }
             default -> {
                 log.warn("Received message on unmapped topic {} — acking and ignoring", topic);
@@ -145,6 +152,12 @@ public class RideEventsConsumer {
     private void validateLifecycle(RideLifecyclePayloadDto p) {
         if (p.rideId() == null || p.riderId() == null || p.driverId() == null) {
             throw new IllegalArgumentException("Ride lifecycle event missing rideId/riderId/driverId");
+        }
+    }
+
+    private void validatePaymentSettled(PaymentSettledPayloadDto p) {
+        if (p.rideId() == null || p.riderId() == null) {
+            throw new IllegalArgumentException("PaymentSettled missing rideId/riderId");
         }
     }
 

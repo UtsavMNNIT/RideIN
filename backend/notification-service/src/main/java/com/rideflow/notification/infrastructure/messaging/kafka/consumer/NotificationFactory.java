@@ -4,6 +4,7 @@ import com.rideflow.notification.domain.model.Notification;
 import com.rideflow.notification.domain.model.NotificationType;
 import com.rideflow.notification.domain.model.Role;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.DispatchFailedPayloadDto;
+import com.rideflow.notification.infrastructure.messaging.kafka.serde.PaymentSettledPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideAssignedPayloadDto;
 import com.rideflow.notification.infrastructure.messaging.kafka.serde.RideLifecyclePayloadDto;
 
@@ -71,6 +72,27 @@ public class NotificationFactory {
         return List.of(
                 Notification.create(p.riderId(),  Role.RIDER,  NotificationType.RIDE_COMPLETED, p.rideId(), base),
                 Notification.create(p.driverId(), Role.DRIVER, NotificationType.RIDE_COMPLETED, p.rideId(), base)
+        );
+    }
+
+    public List<Notification> fromPaymentSettled(PaymentSettledPayloadDto p) {
+        // The rider gets a receipt; the driver gets a "you've been paid" cue.
+        Map<String, Object> base = new LinkedHashMap<>();
+        base.put("rideId",    p.rideId().toString());
+        if (p.paymentId() != null) base.put("paymentId", p.paymentId().toString());
+        if (p.amount()    != null) base.put("amount",    p.amount().toPlainString());
+        if (p.currency()  != null) base.put("currency",  p.currency());
+        if (p.settledAt() != null) base.put("occurredAt", String.valueOf(p.settledAt()));
+        base.put("message", "Payment received.");
+
+        if (p.driverId() != null) {
+            return List.of(
+                    Notification.create(p.riderId(),  Role.RIDER,  NotificationType.PAYMENT_SETTLED, p.rideId(), base),
+                    Notification.create(p.driverId(), Role.DRIVER, NotificationType.PAYMENT_SETTLED, p.rideId(), base)
+            );
+        }
+        return List.of(
+                Notification.create(p.riderId(), Role.RIDER, NotificationType.PAYMENT_SETTLED, p.rideId(), base)
         );
     }
 

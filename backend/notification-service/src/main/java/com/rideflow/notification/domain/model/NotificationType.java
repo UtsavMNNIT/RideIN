@@ -16,5 +16,7 @@ public enum NotificationType {
     /** Dispatch exhausted the radius ladder — no driver could be matched. */
     NO_DRIVERS_FOUND,
     /** The trip was cancelled by the rider or driver. */
-    RIDE_CANCELLED
+    RIDE_CANCELLED,
+    /** The ride fare was settled (simulated payment). */
+    PAYMENT_SETTLED
 }
