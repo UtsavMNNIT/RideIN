@@ -25,4 +25,7 @@ public final class EventTypes {
     public static final String RIDE_COMPLETED       = "ride.Completed";
     public static final String RIDE_CANCELLED       = "ride.Cancelled";
     public static final String FARE_QUOTED          = "pricing.FareQuoted";
+
+    // ---- payment ----
+    public static final String PAYMENT_SETTLED      = "payment.Settled";
 }

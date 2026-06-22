@@ -25,6 +25,7 @@ public final class Topics {
     public static final String RIDE_COMPLETED              = "ride.completed";
     public static final String RIDE_CANCELLED              = "ride.cancelled";
     public static final String PRICING_FARE_QUOTED         = "pricing.fare-quoted";
+    public static final String PAYMENT_SETTLED             = "payment.settled";
 
     /** Suffix appended to a source topic to derive its DLQ. */
     public static final String DLQ_SUFFIX = ".DLQ";
