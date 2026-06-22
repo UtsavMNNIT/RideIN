@@ -25,6 +25,7 @@
         <module>matching-service</module>
         <module>pricing-service</module>
         <module>trip-service</module>
+        <module>payment-service</module>
         <module>api-gateway</module>
     </modules>
 

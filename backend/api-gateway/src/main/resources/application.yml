@@ -108,6 +108,23 @@ spring:
           filters:
             - RewritePath=/api/(?<segment>.*), /$\{segment}
 
+        # payment-service serves /v1/payments/** → strip the /api prefix
+        - id: payment-service
+          uri: ${PAYMENT_SERVICE_URI:http://payment-service:8088}
+          predicates:
+            - Path=/api/v1/payments/**
+          filters:
+            - RewritePath=/api/(?<segment>.*), /$\{segment}
+
+        # operator metrics live in rider-service (it owns the ride read-model)
+        # → /v1/admin/**, strip the /api prefix
+        - id: rider-admin
+          uri: ${RIDER_SERVICE_URI:http://rider-service:8081}
+          predicates:
+            - Path=/api/v1/admin/**
+          filters:
+            - RewritePath=/api/(?<segment>.*), /$\{segment}
+
 # =============================================================================
 # Gateway policy (our own knobs, distinct from spring.cloud.gateway.*)
 # =============================================================================
@@ -140,6 +157,7 @@ rideflow:
       - { method: POST, pattern: /api/v1/drivers/login }
       - { method: POST, pattern: /api/v1/quotes }            # anonymous up-front fare estimate
       - { method: GET,  pattern: /api/v1/rate-cards/** }     # public pricing info
+      - { method: GET,  pattern: /api/v1/admin/metrics }     # demo operator metrics (no ADMIN role yet)
       - { method: GET,  pattern: /actuator/health/** }
 
 server:

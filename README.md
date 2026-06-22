@@ -1,80 +1,98 @@
 # RideFlow
 
-A production-patterned Uber-style ride-matching platform: 7 backend microservices, a Next.js 15 frontend, Kafka event backbone, Redis-geo dispatch, WebSocket live updates. **Built as a resume showcase** — designed for production rigor, scoped pragmatically.
+A production-patterned Uber-style ride-hailing platform: 8 backend microservices, a Next.js 15 frontend, Kafka event backbone, Redis-geo dispatch, WebSocket live updates, and simulated payment settlement. The full product runs end-to-end locally with one command.
 
-> **Status**: notification-service runs end-to-end (Kafka consume → Redis pub/sub fan-out → WebSocket push). Frontend rider home demonstrates the live flow with a one-click trigger. Other backend services are designed and scaffolded; see [What's implemented vs. designed](#whats-implemented-vs-designed).
+> **Status**: the entire ride lifecycle works end-to-end — a rider requests a ride, matching dispatches the nearest online driver, the driver accepts and completes the trip, the fare is settled (simulated), and both parties get live WebSocket notifications. All 8 services and the frontend are implemented and wired to real endpoints.
 
 ---
 
-## Quickstart — 5 minutes
+## Quickstart — one command
 
 ```bash
-# 1. Bring up the backend stack (Postgres, Redis, Kafka, notification-service)
+# 1. (optional) seed env — defaults work out of the box
+cp .env.example .env
+
+# 2. Bring up the whole stack: Postgres, Redis (geo + cache), Kafka,
+#    all 8 services, and the frontend
 docker compose up -d --build
 
-# 2. Wait ~60s for the JVM to boot and Flyway migrations to apply
-docker compose logs -f notification-service | grep -m1 "Started NotificationServiceApplication"
-
-# 3. Install + run the frontend
-cd frontend
-npm install
-npm run dev
+# 3. Wait ~90s for the JVMs to boot + Flyway migrations to apply
+docker compose ps        # everything should be healthy
 ```
 
-Open **http://localhost:3000**, click **Continue as Rider**, then on the home page click either trigger button. Notifications appear live in the inbound stream.
+Open **http://localhost:3000**, register a **driver** (go online, allow location), then in another browser/profile register a **rider** and request a ride. Watch the match, trip, payment receipt, and live notifications flow through.
 
 | What | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
-| Notification API | http://localhost:8086 |
+| API Gateway | http://localhost:8080 |
 | Kafka UI (optional) | `docker compose --profile tools up -d kafka-ui` → http://localhost:8089 |
-| Postgres | `localhost:5432` (user `rideflow` / pass `rideflow`) |
+| Postgres | `localhost:5432` (user `rideflow` / pass from `.env`) |
+
+A scripted end-to-end smoke test (register driver + rider → request → match → trip → **payment settled** → notification → history) lives at `scratchpad/smoke.sh` in the working tree.
 
 ---
 
-## What this demonstrates
+## Services & ports
 
-The single working flow exercises **the exact production pipeline**, not a toy mock:
+| Service | Port | Role |
+|---|---|---|
+| api-gateway | 8080 | Single ingress: routing, JWT auth, Redis token-bucket rate limiting, CORS |
+| rider-service | 8081 | Rider auth/registration, ride request (outbox), ride projection, driver earnings, admin metrics |
+| location-service | 8082 | Redis-geo driver index, nearby-driver queries, stale-driver sweeper |
+| driver-service | 8083 | Driver auth/registration, availability, location pings |
+| matching-service | 8084 | Event-driven dispatch: radius-ladder GEOSEARCH + scoring + Redisson lock + outbox |
+| pricing-service | 8085 | Fare quotes + ride pricing (Haversine + rate cards + surge) |
+| notification-service | 8086 | Kafka → Redis pub/sub → WebSocket fan-out; notification history |
+| trip-service | 8087 | Post-assignment trip state machine (offer → accept → start → complete → cancel) |
+| payment-service | 8088 | **Simulated** fare settlement: consume fare-quoted + ride.completed → publish payment.settled |
+
+---
+
+## The end-to-end flow
 
 ```
-[ Browser ]
-    │ click "Trigger via Kafka"
-    ▼
-[ POST /v1/demo/notify ]                  (Next.js → notification-service)
-    │
-    ▼
-[ KafkaTemplate.send ]                    (idempotent producer, acks=all)
-    │
-    ▼
-[ topic: matching.ride-assigned ]
-    │
-    ▼
-[ @KafkaListener consumer ]               (manual ack, exponential backoff + DLQ)
-    │
-    ▼
-[ PublishNotificationUseCase ]            (idempotency claim + persist, one TX)
-    │
-    ├─ Postgres: notifications + processed_events  (durable + dedupe)
-    │
-    ▼
-[ Redis PUBLISH notify:user:<id> ]        (cross-replica fan-out)
-    │
-    ▼
-[ RedisNotificationSubscriber ]           (any replica that holds the WS session)
-    │
-    ▼
-[ WebSocket frame to the browser ]        (per-session lock, backpressure-safe)
+rider requests ride
+   │  POST /v1/riders/{id}/rides                (rider-service, via outbox)
+   ▼  topic: rider.ride-requested
+   ├─► pricing-service  → pricing.fare-quoted   (quote attached to the ride)
+   │       └─► payment-service caches the fare (PENDING payment)
+   ▼
+matching-service  (GEOSEARCH nearest online driver, Redisson lock)
+   │  topic: matching.ride-assigned
+   ▼
+trip-service  (creates the offer; driver accepts → starts → completes)
+   │  topics: ride.accepted / ride.started / ride.completed
+   ├─► payment-service: on ride.completed, simulate authorize→capture→settle
+   │       └─► topic: payment.settled
+   ▼
+notification-service  (consumes every lifecycle + payment event)
+   │  Redis PUBLISH notify:user:<id>  →  WebSocket frame
+   ▼
+rider & driver browsers update live (status, receipt, notifications)
 ```
 
-Patterns visible in code (the link is to the most-implemented service):
+Patterns visible in code:
 
-- **Hexagonal / Clean Architecture** — `api`/`application`/`domain`/`infrastructure` layout in `backend/notification-service/src/main/java/com/rideflow/notification/`
-- **Transactional outbox** schema — `backend/matching-service/src/main/resources/db/migration/V1__init.sql`
-- **Idempotent consumer** — `notification-service/.../application/usecase/PublishNotificationUseCase.java`
-- **Distributed lock with Redisson** — `backend/matching-service/src/main/java/com/rideflow/matching/infrastructure/cache/redis/RedissonDriverLockService.java`
-- **DLQ with retry policy** — `notification-service/.../infrastructure/messaging/kafka/topology/KafkaConsumerConfig.java`
-- **Cross-replica WS fan-out** — `notification-service/.../infrastructure/cache/redis/RedisNotificationBroadcaster.java`
-- **Server Components + Client Components** split — `frontend/src/app/(rider)/layout.tsx` and `frontend/src/app/(rider)/RiderShell.tsx`
+- **Hexagonal / Clean Architecture** — `api`/`application`/`domain`/`infrastructure` in every service
+- **Transactional outbox** — rider, pricing, matching, trip, payment services
+- **Idempotent consumers** — per-service `processed_events` dedupe table
+- **Distributed lock (Redisson)** — `matching-service` driver lock
+- **DLQ + backoff** — every Kafka consumer config
+- **Cross-replica WS fan-out** — notification-service Redis pub/sub
+- **Server + Client Components split** — `frontend/src/app/(rider|driver|admin)/`
+
+---
+
+## Payments (simulated)
+
+`payment-service` is event-driven and stores no real card data:
+
+- Consumes `pricing.fare-quoted` to learn each ride's fare (creates a `PENDING` payment).
+- On `ride.completed`, simulates authorize → capture → settle and publishes `payment.settled` (via outbox). A configurable `rideflow.payment.simulated-failure-rate` (default `0`) can exercise the failure path.
+- REST: `GET /v1/payments/methods?userId=…`, `POST /v1/payments/methods` (mock cards), `GET /v1/payments/rides/{rideId}` (receipt).
+
+The frontend surfaces a live **receipt** on trip completion and a **payment-methods** page for adding mock cards. `notification-service` pushes a "payment received" notification to the rider.
 
 ---
 
@@ -82,63 +100,27 @@ Patterns visible in code (the link is to the most-implemented service):
 
 | Layer | Tech |
 |---|---|
-| Backend | Java 21, Spring Boot 3.3, Maven multi-module, Spring Kafka, Spring Data JPA + Hibernate 6, Lettuce, Redisson |
+| Backend | Java 21, Spring Boot 3.3, Maven multi-module, Spring Kafka, Spring Data JPA + Hibernate 6, Lettuce, Redisson, Spring Cloud Gateway |
 | Data | PostgreSQL 16 (schema per service), Redis 7 (Geo + cache), Apache Kafka |
-| Frontend | Next.js 15 (App Router), TypeScript strict, TailwindCSS, Shadcn UI, React Query, next-themes |
-| Infra | Docker Compose, multi-stage layered Dockerfile (eclipse-temurin distroless-ish), bash TCP healthchecks |
+| Frontend | Next.js 15 (App Router, standalone output), TypeScript strict, TailwindCSS, Shadcn UI, React Query, React Leaflet, next-themes |
+| Infra | Docker Compose (full stack incl. frontend), multi-stage layered Dockerfiles, bash TCP healthchecks |
 | CI/CD | GitHub Actions — backend-ci, frontend-ci, docker-publish (matrix, cosign-signed, SBOM, Trivy), CodeQL, Dependabot |
 
 ---
 
-## Project structure
+## What's implemented
 
-```
-backend/
-├── pom.xml                       parent POM (BOM + plugin management)
-├── Dockerfile                    shared multi-stage build, parameterised by MODULE
-├── shared/
-│   └── common-events/            EventEnvelope, Topics, EventTypes (the cross-service contract)
-├── notification-service/         IMPLEMENTED — Kafka consumer + WebSocket fan-out + REST backfill
-├── matching-service/             Distributed lock implemented; dispatcher designed
-├── pricing-service/              Designed (formula, APIs, lifecycle)
-├── location-service/             Redis-geo adapter + Kafka consumer on disk
-├── api-gateway/                  Skeleton
-├── rider-service/                Skeleton
-└── driver-service/               Skeleton
-
-frontend/
-└── src/
-    ├── app/                      App Router — (auth), (rider), (driver), (admin) route groups
-    ├── ui/                       components, providers, styles
-    ├── lib/                      ws/, api/, auth/, utils/, query/
-    ├── config/                   typed env via Zod (fails-fast on missing vars)
-    └── middleware.ts             edge auth gate (role-prefix protection)
-
-infra/docker/                     Postgres init scripts, Kafka topic bootstrap, Redis configs
-.github/workflows/                CI/CD (see below)
-```
-
----
-
-## What's implemented vs. designed
-
-Honest accounting — a senior reviewer should know what they're looking at.
-
-| Asset | Status |
+| Area | Status |
 |---|---|
-| **notification-service** | ✅ End-to-end (35 files): domain, app, JPA, Redis pub/sub, WebSocket, Kafka consumer, demo controller |
-| **matching-service** distributed lock | ✅ Redisson port + adapter + config + metrics |
-| **matching-service** dispatcher (M-1 → M-6) | 📐 Designed (see commit history / docs); not yet wired |
-| **pricing-service** | 📐 Designed end-to-end; no code |
-| **rider/driver/api-gateway/location** services | 📐 Skeletons with sibling-consistent folder layout |
-| **Frontend Phase F-1 (Layout)** | ✅ Routing, providers, Shadcn theme, role-aware shell |
-| **Frontend demo (rider home)** | ✅ Live WebSocket + trigger buttons |
-| **Frontend F-2 → F-5** (real auth, real ride flow, maps, full tracking) | 📐 Designed |
-| **CI/CD pipeline** | ✅ 6 workflows + Dependabot — backend-ci, frontend-ci, docker-publish (cosign + SBOM + Trivy), release, CodeQL, dep-review |
-| **Tests** | ❌ Skeleton directories exist; no specs yet |
-| **Observability** | ❌ Actuator/Prometheus endpoint exposed; Grafana dashboards not wired |
-
-Design responses for the unbuilt slices are preserved in the commit history and can be turned into ADRs on request.
+| All 8 backend services (auth, ride, location, match, pricing, trip, notification, **payment**) | ✅ End-to-end |
+| Frontend rider flow (book, map, fare quote, live tracking, **receipt**, **payment methods**, history) | ✅ |
+| Frontend driver flow (availability, location heartbeat, live offers, trip state machine, **earnings**) | ✅ |
+| Frontend admin (live operator **metrics**, rate cards, surge) | ✅ (metrics + read-only tariffs/surge) |
+| Unit tests | ✅ 245 across the backend (domain + use cases) |
+| One-command run (compose incl. frontend) | ✅ |
+| Observability (Grafana dashboards), k8s manifests | 📐 Skeletons — not wired |
+| Security hardening (RS256/JWKS, HttpOnly sessions, service-to-service auth) | 📐 Demo-grade today |
+| Real payment processor (Stripe) | 📐 Simulated settlement only |
 
 ---
 
@@ -146,26 +128,24 @@ Design responses for the unbuilt slices are preserved in the commit history and 
 
 | Symptom | Cause / fix |
 |---|---|
-| `notification-service` won't start; Flyway error | Postgres init hadn't finished. `docker compose down -v` to wipe volumes, then `up -d --build` again. |
-| WebSocket shows `CLOSED` immediately | Check `WS_ALLOWED_ORIGINS` includes `http://localhost:3000`. Browser DevTools → Network → WS tab shows the handshake. |
-| `Trigger via Kafka` button returns 200 but no message arrives | Verify topic exists: `docker exec rideflow-kafka kafka-topics --bootstrap-server localhost:9092 --list`. The `kafka-init` container creates them on first boot. |
-| TypeScript errors in IDE before `npm install` | Expected — types aren't on disk until `cd frontend && npm install`. |
-| Frontend build complains about env vars | Copy `frontend/.env.local.example` → `frontend/.env.local`. Defaults work for local Docker. |
+| A service won't start; Flyway error | Postgres init hadn't finished on first boot. `docker compose down -v` to wipe volumes, then `up -d --build` again. |
+| WebSocket shows `CLOSED` immediately | Check the WS origin allow-list includes `http://localhost:3000`. Browser DevTools → Network → WS tab shows the handshake. |
+| Ride never gets matched | The driver must be **online** with a recent location near the pickup. Confirm `GET /api/v1/location/drivers/nearby?...` returns the driver. Topics: `docker exec rideflow-kafka kafka-topics --bootstrap-server localhost:9092 --list`. |
+| Payment stays "Processing…" | Settlement is event-driven off `ride.completed`; give it a few seconds. Check `docker compose logs payment-service`. |
+| Frontend env errors | Copy `frontend/.env.local.example` → `frontend/.env.local` (only needed when running the frontend outside compose). |
 
 ---
 
-## Roadmap (next slices)
+## Roadmap (next rounds)
 
-1. **Auth**: `common-security` JWT verifier, replace dev-mode `?userId=` handshake
-2. **API gateway**: rate limiting (Redis token bucket), JWT verification, CORS allow-list
-3. **matching-service**: finish M-1 → M-6 (domain + use case + persistence + consumer + producer)
-4. **Frontend F-3 → F-5**: real ride request form, React Leaflet map, ride tracking
-5. **Observability**: Prometheus scrape + Grafana dashboards for dispatch latency, lock contention, WS connection count, DLQ depth
-6. **Tests**: Testcontainers integration tests for the consume → broadcast happy path
+1. **Observability**: Prometheus scrape + Grafana dashboards (dispatch latency, lock contention, WS connections, DLQ depth).
+2. **Kubernetes**: Kustomize bases/overlays + Helm chart (the `k8s/` tree is scaffolded).
+3. **Security hardening**: RS256/JWKS, HttpOnly cookie sessions, service-to-service auth.
+4. **Real payments**: swap the simulated settlement for a Stripe sandbox integration.
+5. **Integration/e2e tests**: Testcontainers across the consume → dispatch → settle → notify path.
 
 ---
 
 ## License
 
 MIT.
-# RideIN

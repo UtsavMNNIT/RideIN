@@ -43,3 +43,6 @@ welcome-to-docker/
 
 # Stray image files at repo root (not project assets)
 /*.jpg
+
+# Local scratch / throwaway scripts (smoke tests, experiments)
+scratchpad/

@@ -34,6 +34,7 @@ services:
       PRICING_DB_PASSWORD: ${PRICING_DB_PASSWORD:-pricing_pass}
       TRIP_DB_PASSWORD: ${TRIP_DB_PASSWORD:-trip_pass}
       NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_pass}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_pass}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "127.0.0.1:5432:5432"
@@ -451,6 +452,42 @@ services:
       start_period: 60s
 
   # =========================================================================
+  # payment-service — simulated fare settlement (consume fare-quoted +
+  # ride.completed → publish payment.settled)
+  # =========================================================================
+  payment-service:
+    <<: *common
+    image: rideflow/payment-service:dev
+    container_name: rideflow-payment-service
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MODULE: payment-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-rideflow}
+      PAYMENT_DB_USER: payment_user
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_pass}
+      KAFKA_BOOTSTRAP_INTERNAL: kafka:9092
+    ports:
+      - "127.0.0.1:8088:8088"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8088' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =========================================================================
   # api-gateway — single ingress: routing, JWT auth, rate limiting, CORS
   # =========================================================================
   api-gateway:
@@ -477,6 +514,8 @@ services:
         condition: service_started
       trip-service:
         condition: service_started
+      payment-service:
+        condition: service_started
     environment:
       SPRING_PROFILES_ACTIVE: docker
       GATEWAY_PORT: 8080
@@ -494,6 +533,7 @@ services:
       MATCHING_SERVICE_URI: http://matching-service:8084
       PRICING_SERVICE_URI: http://pricing-service:8085
       TRIP_SERVICE_URI: http://trip-service:8087
+      PAYMENT_SERVICE_URI: http://payment-service:8088
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
       RATE_LIMIT_RPS: 20
       RATE_LIMIT_BURST: 40
@@ -505,6 +545,41 @@ services:
       timeout: 5s
       retries: 12
       start_period: 45s
+
+  # =========================================================================
+  # frontend — Next.js app (the whole product behind the gateway)
+  # =========================================================================
+  frontend:
+    <<: *common
+    image: rideflow/frontend:dev
+    container_name: rideflow-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      api-gateway:
+        condition: service_started
+    environment:
+      # Browser-facing URLs (resolved in the user's browser, not in-container),
+      # so they point at the host-published ports.
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+      NEXT_PUBLIC_RIDER_API_BASE_URL: http://localhost:8080
+      NEXT_PUBLIC_DRIVER_API_BASE_URL: http://localhost:8080
+      NEXT_PUBLIC_WS_BASE_URL: ws://localhost:8086
+      NEXT_PUBLIC_MAP_PROVIDER: osm
+      NEXT_PUBLIC_APP_NAME: RideFlow
+      NEXT_PUBLIC_APP_VERSION: 0.1.0
+      # Server-only (edge middleware) — must match the auth services' secrets.
+      RIDER_JWT_SECRET: ${RIDER_JWT_SECRET:-dev-only-rider-service-secret-change-me-please-0123456789}
+      DRIVER_JWT_SECRET: ${DRIVER_JWT_SECRET:-dev-only-driver-service-secret-change-me-please-0123456789}
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/3000' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   # =========================================================================
   # Kafka UI (optional — `docker compose --profile tools up`)

@@ -57,6 +57,7 @@ create_topic "ride.started"                    12  "${D30}"
 create_topic "ride.completed"                  12  "${D30}"
 create_topic "ride.cancelled"                  12  "${D30}"
 create_topic "pricing.fare-quoted"             12  "${D7}"
+create_topic "payment.settled"                 12  "${D30}"
 
 # ---- Dead-letter queues ----
 # One per topic that has a consumer (a poison message is routed to <topic>.DLQ;
@@ -71,7 +72,8 @@ for t in \
     ride.started \
     ride.completed \
     ride.cancelled \
-    pricing.fare-quoted
+    pricing.fare-quoted \
+    payment.settled
 do
     create_topic "${t}.DLQ" 3 "${D14}"
 done
