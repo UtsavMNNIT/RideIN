@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Java build context only — skipped for JS by the if-guard below.
       - name: Set up Java 21
