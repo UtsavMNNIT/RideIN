@@ -46,3 +46,6 @@ welcome-to-docker/
 
 # Local scratch / throwaway scripts (smoke tests, experiments)
 scratchpad/
+
+# TypeScript incremental build cache (regenerated on every build)
+frontend/tsconfig.tsbuildinfo
