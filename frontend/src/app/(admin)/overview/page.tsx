@@ -4,6 +4,7 @@ import { Activity, FlaskConical, Gauge, Timer, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { useMetrics } from "@/application/admin/useMetrics";
+import type { OperatorMetrics } from "@/domain/admin/types";
 import {
   Card,
   CardContent,
@@ -35,8 +36,18 @@ function MetricCard({
   );
 }
 
+const ZERO: OperatorMetrics = {
+  activeRides: 0,
+  driversOnline: 0,
+  totalRiders: 0,
+  completionRate: 0,
+  avgDispatchSecs: 0,
+};
+
 export default function AdminOverviewPage() {
   const { data, isPlaceholder } = useMetrics();
+  // `data` is undefined on the first render while the query loads.
+  const metrics = data ?? ZERO;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -56,17 +67,17 @@ export default function AdminOverviewPage() {
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <MetricCard title="Active rides" value={String(data.activeRides)} Icon={Gauge} />
-        <MetricCard title="Drivers online" value={String(data.driversOnline)} Icon={Users} />
-        <MetricCard title="Total riders" value={data.totalRiders.toLocaleString()} Icon={Users} />
+        <MetricCard title="Active rides" value={String(metrics.activeRides)} Icon={Gauge} />
+        <MetricCard title="Drivers online" value={String(metrics.driversOnline)} Icon={Users} />
+        <MetricCard title="Total riders" value={metrics.totalRiders.toLocaleString()} Icon={Users} />
         <MetricCard
           title="Completion rate"
-          value={`${Math.round(data.completionRate * 100)}%`}
+          value={`${Math.round(metrics.completionRate * 100)}%`}
           Icon={Activity}
         />
         <MetricCard
           title="Avg dispatch"
-          value={`${data.avgDispatchSecs}s`}
+          value={`${metrics.avgDispatchSecs}s`}
           Icon={Timer}
         />
       </div>

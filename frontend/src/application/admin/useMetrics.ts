@@ -1,27 +1,24 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+
 import type { OperatorMetrics } from "@/domain/admin/types";
+import { api } from "@/lib/api/client";
 
 /**
- * Operator metrics — PLACEHOLDER.
+ * Operator metrics from rider-service (via the gateway at /api/v1/admin/metrics,
+ * served from the ride read-model). The endpoint is public for the demo — there
+ * is no ADMIN role yet. Polls every 10s so the dashboard stays live.
  *
- * No admin/metrics endpoint exists in any service, and the backend has no ADMIN
- * role. This hook returns static, clearly-labeled sample figures (flagged via
- * `isPlaceholder`) so the overview dashboard can be built now. The page renders
- * a visible "Preview — awaiting backend" banner whenever `isPlaceholder` is true.
- *
- * To make it real later: replace the constant with a useQuery against
- * `GET /v1/admin/metrics` and drop `isPlaceholder`. Shape matches
- * {@link OperatorMetrics}.
+ * `isPlaceholder` is kept (always false) so the overview page can keep its
+ * "preview" banner logic unchanged; it simply never shows now.
  */
-const SAMPLE: OperatorMetrics = {
-  activeRides:     142,
-  driversOnline:   389,
-  totalRiders:     12840,
-  completionRate:  0.93,
-  avgDispatchSecs: 28,
-};
-
 export function useMetrics() {
-  return { data: SAMPLE, isPlaceholder: true as const };
+  const query = useQuery({
+    queryKey: ["operator-metrics"],
+    queryFn: () => api.get<OperatorMetrics>("/api/v1/admin/metrics"),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+  });
+  return { ...query, data: query.data, isPlaceholder: false as const };
 }
