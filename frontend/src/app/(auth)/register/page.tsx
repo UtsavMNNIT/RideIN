@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 
+import { registerDriver } from "@/application/driver/auth";
 import { registerRider } from "@/application/rider/auth";
+import type { VehicleType } from "@/domain/driver/types";
 import { ApiError } from "@/lib/api/client";
-import { createUser } from "@/lib/auth/demoUsers";
-import { signIn } from "@/lib/auth/session";
 import { isValidEmailFormat, verifyEmail } from "@/lib/auth/verifyEmail";
+import { cn } from "@/lib/utils/cn";
 import type { Role } from "@/ui/components/common/RoleBadge";
 import { Button } from "@/ui/components/ui/button";
 import {
@@ -36,10 +37,13 @@ function RegisterForm() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  // Driver-only fields.
+  const [vehicleType, setVehicleType] = useState<VehicleType>("STANDARD");
+  const [vehiclePlate, setVehiclePlate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
-  const landingFor = (r: Role) => (r === "DRIVER" ? "/dashboard" : "/home");
+  const VEHICLE_TYPES: VehicleType[] = ["STANDARD", "XL", "PREMIUM"];
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,15 +53,18 @@ function RegisterForm() {
       setError("Please enter a valid email address.");
       return;
     }
-    // Riders register against the real backend, which enforces an 8-char minimum
-    // (BCrypt). Keep the demo path's looser rule for any non-wired role.
-    const minLength = role === "RIDER" ? 8 : 6;
-    if (password.length < minLength) {
-      setError(`Password must be at least ${minLength} characters.`);
+    // Both roles register against the real backend, which enforces an 8-char
+    // minimum (BCrypt).
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
     if (password !== confirm) {
       setError("Passwords do not match.");
+      return;
+    }
+    if (role === "DRIVER" && !vehiclePlate.trim()) {
+      setError("Please enter your vehicle plate number.");
       return;
     }
 
@@ -81,38 +88,37 @@ function RegisterForm() {
       toast.warning("Email verification isn't configured — skipping deliverability check.");
     }
 
-    // Riders are created in the real backend, then sign in (with 2FA) to obtain a
-    // JWT — registration itself returns no token, so we route to the login step.
-    if (role === "RIDER") {
-      setChecking(true);
-      try {
+    // Both roles are created in the real backend, then sign in (with 2FA) to
+    // obtain a JWT — registration itself returns no token, so we route to the
+    // login step afterward.
+    setChecking(true);
+    try {
+      if (role === "DRIVER") {
+        await registerDriver({
+          email,
+          phone,
+          fullName: name,
+          password,
+          vehicleType,
+          vehiclePlate: vehiclePlate.trim(),
+        });
+      } else {
         await registerRider({ email, phone, fullName: name, password });
-        toast.success("Account created — please sign in to continue.");
-        router.push(`/login/credentials?role=RIDER`);
-      } catch (err) {
-        const status = err instanceof ApiError ? err.status : 0;
-        if (status === 409) {
-          setError("An account with that email already exists. Try signing in.");
-        } else if (status === 400) {
-          setError("Please check your details and try again.");
-        } else {
-          setError("Couldn't create your account right now. Please try again.");
-        }
-      } finally {
-        setChecking(false);
       }
-      return;
+      toast.success("Account created — please sign in to continue.");
+      router.push(`/login/credentials?role=${role}`);
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      if (status === 409) {
+        setError("An account with that email already exists. Try signing in.");
+      } else if (status === 400) {
+        setError("Please check your details and try again.");
+      } else {
+        setError("Couldn't create your account right now. Please try again.");
+      }
+    } finally {
+      setChecking(false);
     }
-
-    const user = createUser({ name, email, phone, password, role });
-    if (!user) {
-      setError("An account with that email already exists. Try signing in.");
-      return;
-    }
-
-    signIn(role);
-    toast.success(`Account created — welcome, ${user.name}!`);
-    router.push(landingFor(role));
   };
 
   return (
@@ -177,6 +183,50 @@ function RegisterForm() {
             />
           </div>
 
+          {role === "DRIVER" && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">Vehicle type</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {VEHICLE_TYPES.map((vt) => {
+                    const active = vt === vehicleType;
+                    return (
+                      <button
+                        key={vt}
+                        type="button"
+                        onClick={() => setVehicleType(vt)}
+                        aria-pressed={active}
+                        className={cn(
+                          "rounded-md border px-3 py-2 text-sm font-medium transition-colors",
+                          active
+                            ? "border-[#8cc63f] bg-[#8cc63f]/10 text-[#5b8a1e]"
+                            : "border-input hover:bg-accent hover:text-accent-foreground",
+                        )}
+                      >
+                        {vt.charAt(0) + vt.slice(1).toLowerCase()}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="vehiclePlate" className="text-sm font-medium">
+                  Vehicle plate
+                </label>
+                <Input
+                  id="vehiclePlate"
+                  autoComplete="off"
+                  placeholder="DL01AB1234"
+                  maxLength={16}
+                  value={vehiclePlate}
+                  onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+            </>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <label htmlFor="password" className="text-sm font-medium">
               Password
@@ -185,7 +235,7 @@ function RegisterForm() {
               id="password"
               type="password"
               autoComplete="new-password"
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

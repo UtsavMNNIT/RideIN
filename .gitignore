@@ -22,6 +22,12 @@
 **/dist/
 **/out/
 
+# ...but the hexagonal "output port" SOURCE packages live in `application/port/out/`
+# and must never be treated as build output (the `**/out/` rule above would
+# otherwise silently drop these interfaces from version control).
+!**/application/port/out/
+!**/application/port/out/**
+
 # Logs
 *.log
 logs/

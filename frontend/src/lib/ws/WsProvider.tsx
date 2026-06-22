@@ -89,3 +89,12 @@ export function useWs(): WsContextValue {
   if (!ctx) throw new Error("useWs must be used inside <WsProvider>");
   return ctx;
 }
+
+/**
+ * Like {@link useWs} but returns null instead of throwing when there's no
+ * provider — for chrome (e.g. the header connection dot) that may render in
+ * layouts without a WebSocket (the admin console is read-only, no WS).
+ */
+export function useWsOptional(): WsContextValue | null {
+  return useContext(WsContext);
+}

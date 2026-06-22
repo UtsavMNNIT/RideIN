@@ -4,8 +4,10 @@ import dynamic from "next/dynamic";
 import { AlertCircle } from "lucide-react";
 
 import { useDriver } from "@/application/driver/useDriver";
+import { useDriverTrip } from "@/application/driver/useDriverTrip";
 import { useLocationHeartbeat } from "@/application/driver/useLocationHeartbeat";
 import { AvailabilityToggle } from "@/ui/components/driver/AvailabilityToggle";
+import { DriverActiveTripPanel } from "@/ui/components/driver/DriverActiveTripPanel";
 import { LiveRideOffers } from "@/ui/components/driver/LiveRideOffers";
 import { Skeleton } from "@/ui/components/ui/skeleton";
 
@@ -18,6 +20,22 @@ const DriverMap = dynamic(() => import("@/ui/components/map/DriverMap"), {
 export default function DriverDashboardPage() {
   const { data: driver } = useDriver();
   const { coords, error } = useLocationHeartbeat(driver?.id, driver?.availability);
+  const {
+    activeTrip,
+    trip,
+    handled,
+    accept,
+    reject,
+    arrived,
+    start,
+    complete,
+    cancel,
+    dismiss,
+  } = useDriverTrip();
+
+  // Offers for rides we've already acted on (or the in-flight trip) are hidden.
+  const handledOffers = new Set(handled);
+  if (activeTrip) handledOffers.add(activeTrip.rideId);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -47,7 +65,26 @@ export default function DriverDashboardPage() {
           <DriverMap coords={coords} />
         </div>
         <div>
-          <LiveRideOffers />
+          {activeTrip ? (
+            <DriverActiveTripPanel
+              ctx={activeTrip}
+              trip={trip}
+              arrived={arrived}
+              start={start}
+              complete={complete}
+              cancel={cancel}
+              onDismiss={dismiss}
+            />
+          ) : (
+            <LiveRideOffers
+              handled={handledOffers}
+              onAccept={(ctx) => accept.mutate(ctx)}
+              onDecline={(rideId) => reject.mutate(rideId)}
+              acceptingId={accept.isPending ? accept.variables?.rideId : undefined}
+              decliningId={reject.isPending ? reject.variables : undefined}
+              busy={accept.isPending || reject.isPending}
+            />
+          )}
         </div>
       </div>
     </div>

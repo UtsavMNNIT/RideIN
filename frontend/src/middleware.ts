@@ -1,15 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 
 /**
- * Edge auth gate. Phase F-1: pass-through with role detection from cookie.
- * Phase F-2 (Authentication) will replace the trivial cookie check with JWT
- * verification using the WebCrypto-friendly `jose` library and a JWKS fetch
- * from common-security.
+ * Edge auth gate.
  *
  * Conventions:
  *   - {@code rf_role} cookie carries "RIDER" | "DRIVER" | "ADMIN" once logged in.
+ *   - {@code rf_token} cookie carries the backend JWT (mirrored from the session
+ *     store) so it can be verified here at the edge.
  *   - Route groups are protected by prefix match; unauthenticated users hitting
  *     a protected prefix are redirected to /login with a `next` param.
+ *
+ * RIDER/DRIVER sessions are verified cryptographically (HS256 signature + exp +
+ * role claim) against the service secrets. ADMIN is demo-grade (cookie role
+ * only) — there is no backend admin auth yet, and the admin pages consume only
+ * public endpoints.
  */
 const PROTECTED_PREFIXES: Record<string, ReadonlyArray<string>> = {
   RIDER:  ["/home", "/request", "/ride", "/history"],
@@ -21,7 +26,36 @@ const PUBLIC_PATHS = new Set<string>([
   "/", "/login", "/login/credentials", "/register", "/forgot-password", "/about",
 ]);
 
-export function middleware(req: NextRequest) {
+// Service JWT secrets. Defaults match the gateway's dev secrets so verification
+// works out of the box; override via server-only env in real environments.
+const RIDER_SECRET = new TextEncoder().encode(
+  process.env.RIDER_JWT_SECRET ?? "dev-only-rider-service-secret-change-me-please-0123456789",
+);
+const DRIVER_SECRET = new TextEncoder().encode(
+  process.env.DRIVER_JWT_SECRET ?? "dev-only-driver-service-secret-change-me-please-0123456789",
+);
+
+/** Verify against either service key (like the gateway keyset); null if invalid/expired. */
+async function verifyToken(token: string): Promise<{ role?: string } | null> {
+  for (const secret of [RIDER_SECRET, DRIVER_SECRET]) {
+    try {
+      const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
+      return payload as { role?: string };
+    } catch {
+      /* try the next key */
+    }
+  }
+  return null;
+}
+
+function redirectToLogin(req: NextRequest, pathname: string) {
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.searchParams.set("next", pathname);
+  return NextResponse.redirect(url);
+}
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Always allow framework + static assets.
@@ -40,26 +74,26 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const role = req.cookies.get("rf_role")?.value;
   const requiresAuth = Object.values(PROTECTED_PREFIXES).some((prefixes) =>
     prefixes.some((p) => pathname.startsWith(p)),
   );
+  if (!requiresAuth) return NextResponse.next();
 
-  if (requiresAuth && !role) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+  const role = req.cookies.get("rf_role")?.value;
+  if (!role) return redirectToLogin(req, pathname);
+
+  // Role-prefix gate: a session may only enter its own route group.
+  const allowedPrefixes = PROTECTED_PREFIXES[role] ?? [];
+  if (!allowedPrefixes.some((p) => pathname.startsWith(p))) {
+    return redirectToLogin(req, pathname);
   }
 
-  // Role-mismatch (e.g., DRIVER trying to hit /overview): block.
-  if (role && requiresAuth) {
-    const allowedPrefixes = PROTECTED_PREFIXES[role] ?? [];
-    const allowed = allowedPrefixes.some((p) => pathname.startsWith(p));
-    if (!allowed) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/login";
-      return NextResponse.redirect(url);
+  // Cryptographically verify real (RIDER/DRIVER) sessions. ADMIN stays demo-grade.
+  if (role === "RIDER" || role === "DRIVER") {
+    const token = req.cookies.get("rf_token")?.value;
+    const claims = token ? await verifyToken(token) : null;
+    if (!claims || claims.role !== role) {
+      return redirectToLogin(req, pathname);
     }
   }
 

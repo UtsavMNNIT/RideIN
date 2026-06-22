@@ -24,6 +24,16 @@ export type DriverResponse = {
   createdAt:       string;
 };
 
+/** Body of POST /v1/drivers (register). All fields required by the backend. */
+export type RegisterDriverRequest = {
+  email:        string;
+  phone:        string;
+  fullName:     string;
+  password:     string;
+  vehicleType:  VehicleType;
+  vehiclePlate: string;
+};
+
 /** Returned by POST /v1/drivers/login. */
 export type LoginResponse = {
   accessToken:      string;
