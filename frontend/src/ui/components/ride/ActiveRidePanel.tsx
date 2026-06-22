@@ -25,6 +25,7 @@ import {
 } from "@/ui/components/ui/card";
 
 import { formatMoney } from "./FareQuoteCard";
+import { PaymentReceiptCard } from "./PaymentReceiptCard";
 
 type Props = {
   ride: RideResponse;
@@ -153,6 +154,7 @@ export function ActiveRidePanel({ ride, trip, onReset }: Props) {
             </div>
           ) : null}
           {km ? <p className="text-xs text-muted-foreground">{km} km travelled</p> : null}
+          <PaymentReceiptCard rideId={ride.id} />
           <Button className="w-full" onClick={onReset}>
             Book another ride
           </Button>

@@ -5,7 +5,7 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
-  Home, MapPin, Clock, Wallet, Gauge, SlidersHorizontal, Flame,
+  Home, MapPin, Clock, Wallet, Gauge, SlidersHorizontal, Flame, CreditCard,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
@@ -18,6 +18,7 @@ const NAV_BY_ROLE: Record<Role, ReadonlyArray<NavItem>> = {
     { href: "/home",    label: "Home",    icon: Home },
     { href: "/request", label: "Request", icon: MapPin },
     { href: "/history", label: "History", icon: Clock },
+    { href: "/payment", label: "Payment", icon: CreditCard },
   ],
   DRIVER: [
     { href: "/dashboard", label: "Dashboard", icon: Gauge },

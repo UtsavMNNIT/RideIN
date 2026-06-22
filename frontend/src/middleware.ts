@@ -17,7 +17,7 @@ import { jwtVerify } from "jose";
  * public endpoints.
  */
 const PROTECTED_PREFIXES: Record<string, ReadonlyArray<string>> = {
-  RIDER:  ["/home", "/request", "/ride", "/history"],
+  RIDER:  ["/home", "/request", "/ride", "/history", "/payment"],
   DRIVER: ["/dashboard", "/earnings", "/ride"],
   ADMIN:  ["/overview", "/tariffs", "/surge"],
 };
