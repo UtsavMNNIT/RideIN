@@ -85,7 +85,7 @@ jobs:
 
       - name: Aggregate test reports
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: JUnit
           path: backend/**/target/surefire-reports/*.xml,backend/**/target/failsafe-reports/*.xml
