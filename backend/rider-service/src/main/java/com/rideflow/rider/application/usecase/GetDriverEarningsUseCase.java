@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class GetDriverEarningsUseCase {
 
     private static final String DEFAULT_CURRENCY = "INR";
+    private static final int    RECENT_TRIPS_LIMIT = 20;
 
     private final RideRepository rideRepository;
 
@@ -54,8 +56,21 @@ public class GetDriverEarningsUseCase {
             }
         }
 
+        String finalCurrency = currency;
+        List<DriverEarnings.RecentTrip> recentTrips = rides.stream()
+                .sorted(Comparator.comparing(Ride::updatedAt).reversed())
+                .limit(RECENT_TRIPS_LIMIT)
+                .map(r -> new DriverEarnings.RecentTrip(
+                        r.id(),
+                        r.updatedAt(),
+                        r.vehicleType() != null ? r.vehicleType().name() : "STANDARD",
+                        r.finalDistanceMeters() != null ? r.finalDistanceMeters() : 0,
+                        r.fareTotal() != null ? r.fareTotal() : BigDecimal.ZERO,
+                        r.currency() != null ? r.currency() : finalCurrency))
+                .toList();
+
         return new DriverEarnings(
                 driverId, totalFare, currency, rides.size(),
-                totalDistance, totalDuration, from, to);
+                totalDistance, totalDuration, from, to, recentTrips);
     }
 }
