@@ -1,9 +1,11 @@
 "use client";
 
-import { Car, Clock, FlaskConical, TrendingUp, Wallet } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Car, Clock, TrendingUp, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { useEarnings } from "@/application/driver/useEarnings";
+import { getSession } from "@/lib/auth/session";
 import {
   Card,
   CardContent,
@@ -38,7 +40,13 @@ function StatCard({
 }
 
 export default function DriverEarningsPage() {
-  const { data, isPlaceholder } = useEarnings(undefined);
+  const [driverId, setDriverId] = useState<string | undefined>(undefined);
+  // Session is client-only (cookie + sessionStorage); read after hydration.
+  useEffect(() => {
+    setDriverId(getSession()?.userId);
+  }, []);
+
+  const { data } = useEarnings(driverId);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -47,14 +55,6 @@ export default function DriverEarningsPage() {
         <p className="text-sm text-muted-foreground">Your trips and payouts.</p>
       </div>
 
-      {isPlaceholder ? (
-        <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
-          <FlaskConical className="h-4 w-4 shrink-0" />
-          Preview — sample data. Live earnings arrive once the backend exposes a
-          driver earnings endpoint.
-        </div>
-      ) : null}
-
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total earnings"
@@ -62,7 +62,7 @@ export default function DriverEarningsPage() {
           Icon={Wallet}
         />
         <StatCard title="Rides completed" value={String(data.ridesCompleted)} Icon={Car} />
-        <StatCard title="Online hours" value={`${data.onlineHours.toFixed(1)} h`} Icon={Clock} />
+        <StatCard title="Hours driven" value={`${data.onlineHours.toFixed(1)} h`} Icon={Clock} />
         <StatCard
           title="Avg fare"
           value={formatMoney(data.currency, data.avgFare)}
