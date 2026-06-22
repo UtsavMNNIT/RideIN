@@ -14,7 +14,11 @@ WORKDIR /app
 
 # Cache npm install on the lockfile only — code changes don't invalidate.
 COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+# `npm install` (not `npm ci`): the lockfile is generated on the maintainer's
+# Windows host, which omits some Linux-only optional native deps (e.g.
+# @emnapi/*), so strict `npm ci` fails on this Alpine/Linux image. `npm install`
+# reconciles those platform binaries; deps are still pinned by the lockfile.
+RUN npm install --no-audit --no-fund
 
 # ----------------------------- STAGE 2: build -------------------------------
 FROM node:${NODE_VERSION} AS build

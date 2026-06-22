@@ -14,6 +14,10 @@ const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Ship a minimal self-hosted runtime: the frontend/Dockerfile runtime stage
+  // copies `.next/standalone` + `.next/static`, which only exist when this is
+  // set. Required for the `frontend` service in docker-compose to build.
+  output: "standalone",
   // Stabilized as a top-level option in Next 15.5 (and now Turbopack-compatible);
   // it previously lived under `experimental`.
   typedRoutes: true,
