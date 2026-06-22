@@ -15,7 +15,7 @@
     <properties>
         <!-- Redisson is NOT in the Spring Boot BOM; pin it here. 3.34.x targets
              Netty 4.1 / Lettuce-compatible and works against Spring Boot 3.3. -->
-        <redisson.version>3.34.1</redisson.version>
+        <redisson.version>4.6.1</redisson.version>
     </properties>
 
     <dependencies>
