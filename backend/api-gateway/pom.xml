@@ -18,7 +18,7 @@
           with Spring Boot 3.3.x; .4 is the latest patch on that line.
         -->
         <spring-cloud.version>2023.0.4</spring-cloud.version>
-        <jjwt.version>0.12.6</jjwt.version>
+        <jjwt.version>0.13.0</jjwt.version>
     </properties>
 
     <dependencyManagement>

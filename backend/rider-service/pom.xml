@@ -13,7 +13,7 @@
     <name>RideFlow :: rider-service</name>
 
     <properties>
-        <jjwt.version>0.12.6</jjwt.version>
+        <jjwt.version>0.13.0</jjwt.version>
     </properties>
 
     <dependencies>

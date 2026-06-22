@@ -14,7 +14,7 @@
 
     <properties>
         <!-- jjwt is not managed by the Spring Boot BOM — pin it here. -->
-        <jjwt.version>0.12.6</jjwt.version>
+        <jjwt.version>0.13.0</jjwt.version>
     </properties>
 
     <dependencies>
