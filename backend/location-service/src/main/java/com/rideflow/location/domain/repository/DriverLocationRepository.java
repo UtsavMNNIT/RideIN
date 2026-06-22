@@ -3,9 +3,11 @@ package com.rideflow.location.domain.repository;
 import com.rideflow.location.domain.model.DriverLocation;
 import com.rideflow.location.domain.model.NearbyDriver;
 import com.rideflow.location.domain.model.NearbyQuery;
+import com.rideflow.location.domain.model.VehicleType;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Outbound port for driver-location persistence. The Redis-Geo adapter
@@ -53,4 +55,31 @@ public interface DriverLocationRepository {
      * @return the number of drivers actually evicted.
      */
     int evictStale(Duration olderThan);
+
+    /**
+     * Unconditionally remove a driver from the index — every geo shard, the
+     * metadata hash, and the heartbeat set.
+     *
+     * <p>Driven by an authoritative {@code OFFLINE} availability event: unlike
+     * {@link #evictStale} there is no heartbeat-score guard, because the driver
+     * has explicitly gone offline and must vanish immediately so matching never
+     * offers it a ride.
+     *
+     * <p>Idempotent: removing an already-absent driver is a no-op.
+     */
+    void remove(UUID driverId);
+
+    /**
+     * Move a driver from the AVAILABLE shard to the BUSY shard in place, reusing
+     * the coordinates already stored in the geo index.
+     *
+     * <p>Driven by an {@code ON_TRIP} availability event that carried no location
+     * (the driver had not pinged yet, or we choose not to trust a possibly-stale
+     * coordinate from the event). The driver simply changes shard so matching
+     * stops offering it rides; the next location ping re-confirms the spot.
+     *
+     * @return {@code true} if the driver was present in the available shard and
+     *         moved; {@code false} if it was not indexed (nothing to move).
+     */
+    boolean markBusy(UUID driverId, VehicleType vehicleType);
 }

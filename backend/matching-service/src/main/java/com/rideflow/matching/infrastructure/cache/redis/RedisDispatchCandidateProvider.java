@@ -27,6 +27,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Reads the Redis-Geo index that location-service maintains and returns
@@ -81,7 +83,8 @@ public class RedisDispatchCandidateProvider implements DispatchCandidateProvider
 
     @Override
     public List<DispatchCandidate> findCandidates(GeoPoint pickup, VehicleType vehicleType,
-                                                  int radiusMeters, int limit) {
+                                                  int radiusMeters, int limit,
+                                                  Set<UUID> excludedDriverIds) {
         String geoKey = GEO_AVAILABLE_PREFIX + vehicleType.name();
 
         GeoResults<GeoLocation<String>> geo = geoSearch(geoKey, pickup, radiusMeters, limit);
@@ -109,12 +112,16 @@ public class RedisDispatchCandidateProvider implements DispatchCandidateProvider
                 continue;
             }
 
-            java.util.UUID driverId;
+            UUID driverId;
             try {
-                driverId = java.util.UUID.fromString(loc.getName());
+                driverId = UUID.fromString(loc.getName());
             } catch (IllegalArgumentException e) {
                 log.warn("Skipping malformed driver id in geo key={} member={}", geoKey, loc.getName());
                 continue;
+            }
+
+            if (excludedDriverIds.contains(driverId)) {
+                continue;   // e.g. the driver who just rejected this ride on a re-dispatch
             }
 
             out.add(new DispatchCandidate(

@@ -5,6 +5,8 @@ import com.rideflow.matching.domain.model.GeoPoint;
 import com.rideflow.matching.domain.model.VehicleType;
 
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Outbound port: supply nearby, dispatchable driver candidates around a pickup.
@@ -27,14 +29,18 @@ import java.util.List;
 public interface DispatchCandidateProvider {
 
     /**
-     * @param pickup        ride pickup location
-     * @param vehicleType   requested vehicle class (selects the geo shard)
-     * @param radiusMeters  search radius for this attempt
-     * @param limit         max candidates to return (K-nearest)
+     * @param pickup             ride pickup location
+     * @param vehicleType        requested vehicle class (selects the geo shard)
+     * @param radiusMeters       search radius for this attempt
+     * @param limit              max candidates to return (K-nearest)
+     * @param excludedDriverIds  drivers to omit — e.g. one who just rejected/let
+     *                           an offer expire on a re-dispatch; empty on the
+     *                           initial dispatch
      * @return filtered, unscored candidates; empty if none qualify
      */
     List<DispatchCandidate> findCandidates(GeoPoint pickup,
                                            VehicleType vehicleType,
                                            int radiusMeters,
-                                           int limit);
+                                           int limit,
+                                           Set<UUID> excludedDriverIds);
 }

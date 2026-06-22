@@ -49,6 +49,20 @@ public class JpaRideRepository implements RideRepository {
     }
 
     @Override
+    public void updateOutcome(Ride ride, List<DispatchAttempt> dispatchAttempts) {
+        // Re-dispatch path: the ride row already exists (it was ASSIGNED before
+        // the offer was rejected). saveAndFlush merges by primary key so the new
+        // outcome (re-assigned or failed) and bumped redispatch_count overwrite
+        // the prior row, surfacing any partial-unique violation here.
+        rides.saveAndFlush(toEntity(ride));
+
+        List<DispatchAttemptEntity> rows = dispatchAttempts.stream()
+                .map(a -> toEntity(ride.id(), a))
+                .toList();
+        attempts.saveAll(rows);
+    }
+
+    @Override
     public Optional<Ride> findById(UUID rideId) {
         return rides.findById(rideId).map(JpaRideRepository::toDomain);
     }
@@ -64,7 +78,7 @@ public class JpaRideRepository implements RideRepository {
                 r.dropoff().lat(), r.dropoff().lng(),
                 r.vehicleType(), r.status(),
                 r.assignedDriverId(), r.assignmentScore(), r.failureReason(),
-                r.requestedAt(), r.assignedAt(), r.failedAt());
+                r.requestedAt(), r.assignedAt(), r.failedAt(), r.redispatchCount());
     }
 
     private static DispatchAttemptEntity toEntity(UUID rideId, DispatchAttempt a) {
@@ -81,6 +95,6 @@ public class JpaRideRepository implements RideRepository {
                 new GeoPoint(e.getDropoffLat(), e.getDropoffLng()),
                 e.getVehicleType(), e.getStatus(),
                 e.getAssignedDriverId(), e.getAssignmentScore(), e.getFailureReason(),
-                e.getRequestedAt(), e.getAssignedAt(), e.getFailedAt());
+                e.getRequestedAt(), e.getAssignedAt(), e.getFailedAt(), e.getRedispatchCount());
     }
 }

@@ -2,6 +2,8 @@ package com.rideflow.driver.application.usecase;
 
 import com.rideflow.driver.application.port.out.DriverRepository;
 import com.rideflow.driver.application.port.out.ProcessedEventStore;
+import com.rideflow.driver.domain.event.DomainEventPublisher;
+import com.rideflow.driver.domain.event.DriverAvailabilityChanged;
 import com.rideflow.driver.domain.model.Driver;
 
 import org.slf4j.Logger;
@@ -30,15 +32,18 @@ public class SyncDriverAvailabilityUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(SyncDriverAvailabilityUseCase.class);
 
-    private final DriverRepository    repository;
-    private final ProcessedEventStore processedEvents;
-    private final String              consumerGroup;
+    private final DriverRepository     repository;
+    private final ProcessedEventStore  processedEvents;
+    private final DomainEventPublisher events;
+    private final String               consumerGroup;
 
     public SyncDriverAvailabilityUseCase(DriverRepository repository,
                                          ProcessedEventStore processedEvents,
+                                         DomainEventPublisher events,
                                          @Value("${spring.kafka.consumer.group-id}") String consumerGroup) {
         this.repository      = repository;
         this.processedEvents = processedEvents;
+        this.events          = events;
         this.consumerGroup   = consumerGroup;
     }
 
@@ -62,11 +67,14 @@ public class SyncDriverAvailabilityUseCase {
         Optional<Driver> driver = repository.findById(driverId);
         if (driver.isEmpty()) {
             // Stray/unknown driver — nothing to retry. Record and move on.
+            // No availability event: there is no driver whose presence changed.
             log.warn("Driver {} not found for {} event {}; marking processed", driverId, label, eventId);
             processedEvents.markProcessed(eventId, consumerGroup);
             return;
         }
-        repository.save(transition.apply(driver.get()));
+        Driver saved = repository.save(transition.apply(driver.get()));
+        events.publishAvailabilityChanged(DriverAvailabilityChanged.from(
+                saved.id(), saved.availability(), saved.vehicleType(), saved.lastLocation()));
         processedEvents.markProcessed(eventId, consumerGroup);
         log.info("Driver {} availability synced ({})", driverId, label);
     }

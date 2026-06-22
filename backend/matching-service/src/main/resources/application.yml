@@ -84,6 +84,9 @@ rideflow:
     # unavailable, even if it lingers in the geo index (meta TTL is 60s; we cut
     # tighter so we never offer a ride to a driver who went dark mid-window).
     candidate-staleness-ms: 30000
+    # Max times a ride may be re-dispatched after a rejected/expired offer
+    # (consumed from ride.rejected) before it is failed.
+    max-redispatches: 3
     # Radius expansion ladder
     attempts:
       - 3000

@@ -28,7 +28,8 @@ public record Ride(
         String     failureReason,
         Instant    requestedAt,
         Instant    assignedAt,
-        Instant    failedAt
+        Instant    failedAt,
+        int        redispatchCount
 ) {
 
     public Ride {
@@ -39,13 +40,14 @@ public record Ride(
         if (vehicleType == null) throw new IllegalArgumentException("vehicleType required");
         if (status == null)      throw new IllegalArgumentException("status required");
         if (requestedAt == null) throw new IllegalArgumentException("requestedAt required");
+        if (redispatchCount < 0) throw new IllegalArgumentException("redispatchCount must be >= 0");
     }
 
     /** Freshly received request, before any dispatch attempt. */
     public static Ride requested(UUID id, UUID riderId, GeoPoint pickup, GeoPoint dropoff,
                                  VehicleType vehicleType, Instant requestedAt) {
         return new Ride(id, riderId, pickup, dropoff, vehicleType,
-                RideStatus.REQUESTED, null, null, null, requestedAt, null, null);
+                RideStatus.REQUESTED, null, null, null, requestedAt, null, null, 0);
     }
 
     /** Enter the radius-expansion loop. */
@@ -58,19 +60,37 @@ public record Ride(
     public Ride assignTo(UUID driverId, double score, Instant when) {
         if (driverId == null) throw new IllegalArgumentException("driverId required to assign");
         return new Ride(id, riderId, pickup, dropoff, vehicleType,
-                RideStatus.ASSIGNED, driverId, score, null, requestedAt, when, null);
+                RideStatus.ASSIGNED, driverId, score, null, requestedAt, when, null, redispatchCount);
     }
 
     /** No driver could be matched within the radius ladder. */
     public Ride fail(String reason, Instant when) {
         return new Ride(id, riderId, pickup, dropoff, vehicleType,
-                RideStatus.DISPATCH_FAILED, null, null, reason, requestedAt, null, when);
+                RideStatus.DISPATCH_FAILED, null, null, reason, requestedAt, null, when, redispatchCount);
+    }
+
+    /**
+     * Re-enter the dispatch loop after the assigned driver rejected the offer or
+     * it expired. Clears the prior assignment but preserves the redispatch
+     * counter (it is incremented only once a new driver is actually committed
+     * via {@link #reassignTo}).
+     */
+    public Ride beginRedispatch() {
+        return new Ride(id, riderId, pickup, dropoff, vehicleType,
+                RideStatus.DISPATCHING, null, null, null, requestedAt, null, null, redispatchCount);
+    }
+
+    /** A new driver won scoring on a re-dispatch; bumps the redispatch counter. */
+    public Ride reassignTo(UUID driverId, double score, Instant when) {
+        if (driverId == null) throw new IllegalArgumentException("driverId required to reassign");
+        return new Ride(id, riderId, pickup, dropoff, vehicleType,
+                RideStatus.ASSIGNED, driverId, score, null, requestedAt, when, null, redispatchCount + 1);
     }
 
     private Ride withStatus(RideStatus next) {
         return new Ride(id, riderId, pickup, dropoff, vehicleType,
                 next, assignedDriverId, assignmentScore, failureReason,
-                requestedAt, assignedAt, failedAt);
+                requestedAt, assignedAt, failedAt, redispatchCount);
     }
 
     private void requireFrom(RideStatus expected) {

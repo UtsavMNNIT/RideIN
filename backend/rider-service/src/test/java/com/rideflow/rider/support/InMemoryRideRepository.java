@@ -2,7 +2,9 @@ package com.rideflow.rider.support;
 
 import com.rideflow.rider.application.port.out.RideRepository;
 import com.rideflow.rider.domain.model.Ride;
+import com.rideflow.rider.domain.model.RideStatus;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -37,6 +39,18 @@ public final class InMemoryRideRepository implements RideRepository {
         int from = Math.min(page * size, all.size());
         int to = Math.min(from + size, all.size());
         return all.subList(from, to);
+    }
+
+    @Override
+    public List<Ride> findCompletedForDriver(UUID driverId, Instant from, Instant to) {
+        List<Ride> all = new ArrayList<>(byId.values());
+        all.removeIf(r -> r.assignedDriverId() == null
+                || !r.assignedDriverId().equals(driverId)
+                || r.status() != RideStatus.COMPLETED
+                || (from != null && r.requestedAt().isBefore(from))
+                || (to != null && !r.requestedAt().isBefore(to)));
+        all.sort(Comparator.comparing(Ride::requestedAt).reversed());
+        return all;
     }
 
     public Ride get(UUID rideId) {

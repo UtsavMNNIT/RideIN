@@ -15,6 +15,7 @@ import java.util.List;
 public record DispatchProperties(
         int           candidateLimit,
         long          candidateStalenessMs,
+        int           maxRedispatches,
         List<Integer> attempts,
         Weight        weight
 ) {
@@ -22,6 +23,7 @@ public record DispatchProperties(
     public DispatchProperties {
         if (candidateLimit <= 0)        throw new IllegalArgumentException("candidate-limit must be > 0");
         if (candidateStalenessMs <= 0)  throw new IllegalArgumentException("candidate-staleness-ms must be > 0");
+        if (maxRedispatches < 0)        throw new IllegalArgumentException("max-redispatches must be >= 0");
         if (attempts == null || attempts.isEmpty())
             throw new IllegalArgumentException("dispatch attempts (radius ladder) must not be empty");
         if (weight == null) throw new IllegalArgumentException("dispatch weights required");
