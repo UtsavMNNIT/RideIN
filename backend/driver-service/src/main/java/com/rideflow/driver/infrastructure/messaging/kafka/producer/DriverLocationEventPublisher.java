@@ -4,6 +4,7 @@ import com.rideflow.common.events.EventEnvelope;
 import com.rideflow.common.events.EventTypes;
 import com.rideflow.common.events.Topics;
 import com.rideflow.driver.domain.event.DomainEventPublisher;
+import com.rideflow.driver.domain.event.DriverAvailabilityChanged;
 import com.rideflow.driver.domain.event.DriverLocationUpdated;
 
 import io.micrometer.core.instrument.Counter;
@@ -54,6 +55,8 @@ public class DriverLocationEventPublisher implements DomainEventPublisher {
     private final Counter       failedCounter;
     private final Counter       fatalCounter;
     private final Timer         publishTimer;
+    private final Counter       availabilityPublishedCounter;
+    private final Counter       availabilityFailedCounter;
 
     public DriverLocationEventPublisher(
             KafkaTemplate<String, EventEnvelope<?>> kafkaTemplate,
@@ -77,6 +80,15 @@ public class DriverLocationEventPublisher implements DomainEventPublisher {
         this.publishTimer = Timer.builder("rideflow.events.publish.duration")
                 .description("End-to-end publish latency observed by the application")
                 .tag("topic", Topics.DRIVER_LOCATION_UPDATED)
+                .register(registry);
+
+        this.availabilityPublishedCounter = Counter.builder("rideflow.events.published")
+                .description("Successfully published events")
+                .tag("topic", Topics.DRIVER_AVAILABILITY_CHANGED)
+                .register(registry);
+        this.availabilityFailedCounter = Counter.builder("rideflow.events.failed")
+                .description("Availability events dropped after producer-level retries exhausted")
+                .tag("topic", Topics.DRIVER_AVAILABILITY_CHANGED)
                 .register(registry);
     }
 
@@ -135,6 +147,38 @@ public class DriverLocationEventPublisher implements DomainEventPublisher {
             failedCounter.increment();
             log.warn("Dropped DriverLocationUpdated after retries — driverId={} eventId={} cause={}",
                     payload.driverId(), envelope.eventId(), cause.getClass().getSimpleName());
+        });
+    }
+
+    @Override
+    public void publishAvailabilityChanged(DriverAvailabilityChanged payload) {
+        EventEnvelope<DriverAvailabilityChanged> envelope = EventEnvelope.of(
+                EventTypes.DRIVER_AVAILABILITY_CHANGED,
+                SCHEMA_VERSION,
+                SOURCE,
+                currentTraceId(),
+                payload);
+
+        ProducerRecord<String, EventEnvelope<?>> record = new ProducerRecord<>(
+                Topics.DRIVER_AVAILABILITY_CHANGED,
+                payload.driverId().toString(),     // partition key → per-driver ordering
+                envelope);
+
+        kafkaTemplate.send(record).whenComplete((result, ex) -> {
+            if (ex == null) {
+                availabilityPublishedCounter.increment();
+                if (log.isDebugEnabled()) {
+                    log.debug("Published DriverAvailabilityChanged driverId={} availability={}",
+                            payload.driverId(), payload.availability());
+                }
+                return;
+            }
+            // Dispatch-critical but still non-fatal to the request: the driver's
+            // next location ping (ONLINE) or the stale-sweeper (OFFLINE) will
+            // reconcile the geo index. Observe + alert rather than block.
+            availabilityFailedCounter.increment();
+            log.warn("Dropped DriverAvailabilityChanged after retries — driverId={} availability={} cause={}",
+                    payload.driverId(), payload.availability(), unwrap(ex).getClass().getSimpleName());
         });
     }
 

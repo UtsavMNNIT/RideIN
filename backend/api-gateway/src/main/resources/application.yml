@@ -63,6 +63,15 @@ spring:
           filters:
             - RewritePath=/api/(?<segment>.*), /$\{segment}
 
+        # driver earnings live in rider-service (it owns the per-ride fare +
+        # completion read-model) → /v1/earnings/**, strip the /api prefix
+        - id: rider-earnings
+          uri: ${RIDER_SERVICE_URI:http://rider-service:8081}
+          predicates:
+            - Path=/api/v1/earnings/**
+          filters:
+            - RewritePath=/api/(?<segment>.*), /$\{segment}
+
         # driver-service serves /v1/drivers/**
         - id: driver-service
           uri: ${DRIVER_SERVICE_URI:http://driver-service:8083}

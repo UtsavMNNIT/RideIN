@@ -70,6 +70,9 @@ public class RideEntity {
     @Column(name = "failed_at")
     private Instant failedAt;
 
+    @Column(name = "redispatch_count", nullable = false)
+    private int redispatchCount;
+
     @Version
     @Column(nullable = false)
     private int version;
@@ -86,7 +89,7 @@ public class RideEntity {
                       double dropoffLat, double dropoffLng, VehicleType vehicleType,
                       RideStatus status, UUID assignedDriverId, Double assignmentScore,
                       String failureReason, Instant requestedAt, Instant assignedAt,
-                      Instant failedAt) {
+                      Instant failedAt, int redispatchCount) {
         this.id               = id;
         this.riderId          = riderId;
         this.pickupLat        = pickupLat;
@@ -101,6 +104,7 @@ public class RideEntity {
         this.requestedAt      = requestedAt;
         this.assignedAt       = assignedAt;
         this.failedAt         = failedAt;
+        this.redispatchCount  = redispatchCount;
     }
 
     public UUID        getId()               { return id; }
@@ -117,6 +121,7 @@ public class RideEntity {
     public Instant     getRequestedAt()      { return requestedAt; }
     public Instant     getAssignedAt()       { return assignedAt; }
     public Instant     getFailedAt()         { return failedAt; }
+    public int         getRedispatchCount()  { return redispatchCount; }
     public int         getVersion()          { return version; }
     public Instant     getCreatedAt()        { return createdAt; }
     public Instant     getUpdatedAt()        { return updatedAt; }

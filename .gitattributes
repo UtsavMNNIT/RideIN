@@ -1,0 +1,10 @@
+# Shell scripts and Lua must use LF — they run inside Linux containers and
+# CRLF breaks the shebang/`set` options (e.g. `set: pipefail: invalid option`).
+*.sh   text eol=lf
+*.lua  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Let Git normalise text files; keep these binary.
+*.jpg  binary
+*.png  binary

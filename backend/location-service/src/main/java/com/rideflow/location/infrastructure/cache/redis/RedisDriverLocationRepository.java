@@ -53,6 +53,8 @@ public class RedisDriverLocationRepository implements DriverLocationRepository {
     private final StringRedisTemplate         redis;
     private final DefaultRedisScript<Long>    updateScript;
     private final DefaultRedisScript<Long>    evictScript;
+    private final DefaultRedisScript<Long>    removeScript;
+    private final DefaultRedisScript<Long>    markBusyScript;
 
     /** Every geo shard key (available + busy for each vehicle type), computed once. */
     private final List<String> allGeoKeys;
@@ -60,10 +62,14 @@ public class RedisDriverLocationRepository implements DriverLocationRepository {
     public RedisDriverLocationRepository(
             @Qualifier("geoRedisTemplate") StringRedisTemplate redis,
             DefaultRedisScript<Long> updateDriverLocationScript,
-            DefaultRedisScript<Long> evictStaleDriverScript) {
-        this.redis        = redis;
-        this.updateScript = updateDriverLocationScript;
-        this.evictScript  = evictStaleDriverScript;
+            DefaultRedisScript<Long> evictStaleDriverScript,
+            DefaultRedisScript<Long> removeDriverScript,
+            DefaultRedisScript<Long> markDriverBusyScript) {
+        this.redis          = redis;
+        this.updateScript   = updateDriverLocationScript;
+        this.evictScript    = evictStaleDriverScript;
+        this.removeScript   = removeDriverScript;
+        this.markBusyScript = markDriverBusyScript;
 
         List<String> geoKeys = new ArrayList<>(VehicleType.values().length * 2);
         for (VehicleType vt : VehicleType.values()) {
@@ -199,5 +205,34 @@ public class RedisDriverLocationRepository implements DriverLocationRepository {
             log.info("Swept {} stale driver(s) from geo index (older than {})", evicted, olderThan);
         }
         return evicted;
+    }
+
+    // -------------------------------------------------------------------
+    // Availability-sync path (driver.availability-changed events)
+    // -------------------------------------------------------------------
+
+    @Override
+    public void remove(UUID driverId) {
+        // KEYS = all geo shards, then heartbeat, then this driver's meta key —
+        // the layout remove-driver.lua expects (KEYS[1..N-2]=shards,
+        // KEYS[N-1]=heartbeat, KEYS[N]=meta).
+        List<String> keys = new ArrayList<>(allGeoKeys.size() + 2);
+        keys.addAll(allGeoKeys);
+        keys.add(HEARTBEAT_KEY);
+        keys.add(META_PREFIX + driverId);
+
+        redis.execute(removeScript, keys, driverId.toString());
+    }
+
+    @Override
+    public boolean markBusy(UUID driverId, VehicleType vehicleType) {
+        String vt = vehicleType.name();
+        List<String> keys = List.of(
+                GEO_AVAILABLE_PREFIX + vt,
+                GEO_BUSY_PREFIX + vt,
+                META_PREFIX + driverId);
+
+        Long result = redis.execute(markBusyScript, keys, driverId.toString());
+        return result != null && result == 1L;
     }
 }

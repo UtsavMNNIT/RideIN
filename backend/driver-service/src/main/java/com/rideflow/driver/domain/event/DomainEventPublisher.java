@@ -16,4 +16,15 @@ public interface DomainEventPublisher {
      * by the adapter (retries + drop-with-metric on exhaustion).
      */
     void publishLocationUpdate(DriverLocationUpdated event);
+
+    /**
+     * Publish a driver presence change (ONLINE / OFFLINE / ON_TRIP) so
+     * location-service can keep its Redis geo availability index correct.
+     *
+     * <p>Unlike the location stream this is low-volume and dispatch-critical
+     * (a dropped OFFLINE would leave a ghost in the index), so the adapter
+     * publishes to the compacted {@code driver.availability-changed} topic
+     * keyed by driverId for per-driver ordering.
+     */
+    void publishAvailabilityChanged(DriverAvailabilityChanged event);
 }

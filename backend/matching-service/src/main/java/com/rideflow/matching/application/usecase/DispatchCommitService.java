@@ -125,4 +125,77 @@ public class DispatchCommitService {
         log.info("Ride {} dispatch failed: {} after {} attempt(s), last radius {}m",
                 failed.id(), reason, attempts.size(), lastRadiusMeters);
     }
+
+    /**
+     * Re-dispatch counterpart of {@link #commitAssignment}: the ride already has
+     * a persisted row (it was {@code ASSIGNED} before the offer was rejected), so
+     * we {@code updateOutcome} rather than insert, and {@link Ride#reassignTo}
+     * bumps the redispatch counter. Idempotency is keyed on the inbound
+     * {@code ride.rejected} event id.
+     */
+    @Transactional
+    public boolean commitReassignment(java.util.UUID inboundEventId,
+                                      String consumerGroup,
+                                      Ride ride,
+                                      DispatchCandidate winner,
+                                      List<DispatchAttempt> attempts) {
+        Instant now = Instant.now();
+        Ride reassigned = ride.reassignTo(winner.driverId(), winner.score(), now);
+
+        try {
+            processedEvents.markProcessed(inboundEventId, consumerGroup);
+            rideRepository.updateOutcome(reassigned, attempts);
+
+            eventPublisher.publishRideAssigned(new RideAssigned(
+                    reassigned.id(),
+                    reassigned.riderId(),
+                    winner.driverId(),
+                    reassigned.pickup().lat(),
+                    reassigned.pickup().lng(),
+                    reassigned.dropoff().lat(),
+                    reassigned.dropoff().lng(),
+                    reassigned.vehicleType().name(),
+                    winner.score(),
+                    winner.distanceMeters(),
+                    attempts.size(),
+                    now));
+
+            log.info("Ride {} re-assigned to driver {} score={} (redispatch #{})",
+                    reassigned.id(), winner.driverId(),
+                    String.format("%.3f", winner.score()), reassigned.redispatchCount());
+            return true;
+
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Re-assignment lost race for ride {} driver {} — {}",
+                    ride.id(), winner.driverId(), e.getMostSpecificCause().getMessage());
+            throw e;   // rollback; orchestrator catches and continues
+        }
+    }
+
+    /**
+     * Commit a re-dispatch failure (ladder exhausted on a re-dispatch, or the
+     * redispatch limit was hit). Updates the existing row rather than inserting.
+     */
+    @Transactional
+    public void commitRedispatchFailure(java.util.UUID inboundEventId,
+                                        String consumerGroup,
+                                        Ride ride,
+                                        String reason) {
+        Instant now = Instant.now();
+        Ride failed = ride.fail(reason, now);
+
+        processedEvents.markProcessed(inboundEventId, consumerGroup);
+        rideRepository.updateOutcome(failed, List.of());
+
+        eventPublisher.publishRideDispatchFailed(new RideDispatchFailed(
+                failed.id(),
+                failed.riderId(),
+                failed.vehicleType().name(),
+                reason,
+                0,
+                0,
+                now));
+
+        log.info("Ride {} re-dispatch failed: {}", failed.id(), reason);
+    }
 }

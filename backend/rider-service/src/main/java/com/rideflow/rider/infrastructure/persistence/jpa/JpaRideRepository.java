@@ -3,6 +3,7 @@ package com.rideflow.rider.infrastructure.persistence.jpa;
 import com.rideflow.rider.application.port.out.RideRepository;
 import com.rideflow.rider.domain.model.GeoPoint;
 import com.rideflow.rider.domain.model.Ride;
+import com.rideflow.rider.domain.model.RideStatus;
 import com.rideflow.rider.infrastructure.persistence.jpa.entity.RideEntity;
 import com.rideflow.rider.infrastructure.persistence.jpa.repository.RideJpaRepository;
 
@@ -10,6 +11,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +42,14 @@ public class JpaRideRepository implements RideRepository {
     @Override
     public List<Ride> findByRider(UUID riderId, int page, int size) {
         return jpa.findByRider(riderId, PageRequest.of(page, size))
+                  .stream()
+                  .map(JpaRideRepository::toDomain)
+                  .toList();
+    }
+
+    @Override
+    public List<Ride> findCompletedForDriver(UUID driverId, Instant from, Instant to) {
+        return jpa.findCompletedForDriver(driverId, RideStatus.COMPLETED, from, to)
                   .stream()
                   .map(JpaRideRepository::toDomain)
                   .toList();

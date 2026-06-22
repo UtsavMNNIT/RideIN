@@ -8,6 +8,7 @@ import com.rideflow.matching.domain.model.DispatchAttempt;
 import com.rideflow.matching.domain.model.DispatchCandidate;
 import com.rideflow.matching.domain.model.GeoPoint;
 import com.rideflow.matching.domain.model.Ride;
+import com.rideflow.matching.domain.model.RideStatus;
 import com.rideflow.matching.domain.model.VehicleType;
 import com.rideflow.matching.domain.repository.DispatchCandidateProvider;
 import com.rideflow.matching.domain.service.DispatchScorer;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -121,45 +123,101 @@ public class DispatchRideUseCase {
                 cmd.rideId(), cmd.riderId(), cmd.pickup(), cmd.dropoff(),
                 cmd.vehicleType(), cmd.requestedAt()).beginDispatch();
 
+        runLadder(cmd.eventId(), ride, Set.of(), false);
+    }
+
+    /**
+     * Re-dispatch a ride after its assigned driver rejected the offer or it
+     * expired (driven by {@code ride.rejected}). Idempotent on the rejection
+     * event id; a stale rejection (the ride is no longer ASSIGNED to that
+     * driver) is acknowledged and skipped. Bounded by
+     * {@code rideflow.dispatch.max-redispatches}.
+     */
+    public void redispatch(UUID eventId, UUID rideId, UUID rejectedDriverId) {
+        if (processedEvents.isProcessed(eventId, consumerGroup)) {
+            log.debug("Skipping already-processed rejection eventId={}", eventId);
+            count("redispatch.outcome", "result", "duplicate");
+            return;
+        }
+
+        Ride existing = rideRepository.findById(rideId).orElse(null);
+
+        // Only re-dispatch a ride still ASSIGNED to the driver who rejected; a
+        // missing ride or any other state is a stale/duplicate rejection — ack
+        // it so the offset advances, but do nothing else.
+        if (existing == null
+                || existing.status() != RideStatus.ASSIGNED
+                || !rejectedDriverId.equals(existing.assignedDriverId())) {
+            log.debug("Ride {} not re-dispatchable for rejecting driver {} (ride={}); acking & skipping",
+                    rideId, rejectedDriverId, existing);
+            processedEvents.markProcessed(eventId, consumerGroup);
+            count("redispatch.outcome", "result", "skipped");
+            return;
+        }
+
+        if (existing.redispatchCount() >= props.maxRedispatches()) {
+            log.info("Ride {} hit re-dispatch limit {}; failing", rideId, props.maxRedispatches());
+            commitService.commitRedispatchFailure(eventId, consumerGroup, existing, "MAX_REDISPATCH_EXCEEDED");
+            count("redispatch.outcome", "result", "exhausted");
+            return;
+        }
+
+        // Exclude the driver who just rejected so we never re-offer the same one.
+        runLadder(eventId, existing.beginRedispatch(), Set.of(rejectedDriverId), true);
+    }
+
+    /**
+     * Shared radius-expansion ladder for both initial dispatch and re-dispatch.
+     * {@code dispatching} must already be in {@link RideStatus#DISPATCHING}.
+     * When {@code redispatch} is true the commit updates the existing ride row
+     * (bumping the redispatch counter) instead of inserting a new one.
+     */
+    private void runLadder(UUID eventId, Ride dispatching, Set<UUID> excluded, boolean redispatch) {
+        String outcome = redispatch ? "redispatch.outcome" : "dispatch.outcome";
+
         List<DispatchAttempt> attempts = new ArrayList<>();
         int attemptNo  = 0;
         int lastRadius = props.attempts().get(0);
 
-        // ---- 2. Radius-expansion ladder ------------------------------------
+        // ---- Radius-expansion ladder ---------------------------------------
         for (int radius : props.attempts()) {
             attemptNo++;
             lastRadius = radius;
             long attemptStart = System.nanoTime();
 
             List<DispatchCandidate> raw = candidateProvider.findCandidates(
-                    ride.pickup(), ride.vehicleType(), radius, props.candidateLimit());
+                    dispatching.pickup(), dispatching.vehicleType(), radius, props.candidateLimit(), excluded);
 
             if (raw.isEmpty()) {
                 attempts.add(DispatchAttempt.noCandidates(attemptNo, radius, elapsedMs(attemptStart)));
-                log.debug("Ride {} attempt {} radius {}m: no candidates", ride.id(), attemptNo, radius);
+                log.debug("Ride {} attempt {} radius {}m: no candidates", dispatching.id(), attemptNo, radius);
                 continue;
             }
 
-            List<DispatchCandidate> ranked = scorer.rank(raw, ride.pickup(), radius);
+            List<DispatchCandidate> ranked = scorer.rank(raw, dispatching.pickup(), radius);
 
-            // ---- 3/4/5. Lock best-first ------------------------------------
-            DispatchCandidate matched = tryLockAndCommit(cmd, ride, ranked, attempts,
-                    attemptNo, radius, raw.size(), attemptStart);
+            // ---- Lock best-first -------------------------------------------
+            DispatchCandidate matched = tryLockAndCommit(eventId, dispatching, ranked, attempts,
+                    attemptNo, radius, raw.size(), attemptStart, redispatch);
             if (matched != null) {
-                count("dispatch.outcome", "result", "matched");
+                count(outcome, "result", "matched");
                 return;
             }
             // Every candidate this ring was contended or lost the DB race — widen.
             log.debug("Ride {} attempt {} radius {}m: {} candidates, none lockable; expanding",
-                    ride.id(), attemptNo, radius, raw.size());
+                    dispatching.id(), attemptNo, radius, raw.size());
         }
 
-        // ---- 6. Ladder exhausted -------------------------------------------
+        // ---- Ladder exhausted ----------------------------------------------
         String reason = attempts.stream().allMatch(a -> a.candidatesFound() == 0)
                 ? "NO_DRIVERS_IN_RANGE"
                 : "ALL_CANDIDATES_CONTENDED";
-        commitService.commitFailure(cmd.eventId(), consumerGroup, ride, attempts, reason, lastRadius);
-        count("dispatch.outcome", "result", "failed");
+        if (redispatch) {
+            commitService.commitRedispatchFailure(eventId, consumerGroup, dispatching, reason);
+        } else {
+            commitService.commitFailure(eventId, consumerGroup, dispatching, attempts, reason, lastRadius);
+        }
+        count(outcome, "result", "failed");
     }
 
     /**
@@ -167,11 +225,11 @@ public class DispatchRideUseCase {
      * the matched candidate, or {@code null} if every candidate this ring was
      * either contended (lock held elsewhere) or lost the DB uniqueness race.
      */
-    private DispatchCandidate tryLockAndCommit(DispatchCommand cmd, Ride ride,
+    private DispatchCandidate tryLockAndCommit(UUID eventId, Ride ride,
                                                List<DispatchCandidate> ranked,
                                                List<DispatchAttempt> attempts,
                                                int attemptNo, int radius, int found,
-                                               long attemptStart) {
+                                               long attemptStart, boolean redispatch) {
         for (DispatchCandidate c : ranked) {
             try (DriverLock lock = lockService.tryAcquire(c.driverId())) {
                 if (!lock.isAcquired()) {
@@ -184,8 +242,9 @@ public class DispatchRideUseCase {
                 List<DispatchAttempt> finalAttempts = append(attempts, winning);
 
                 try {
-                    boolean committed = commitService.commitAssignment(
-                            cmd.eventId(), consumerGroup, ride, c, finalAttempts);
+                    boolean committed = redispatch
+                            ? commitService.commitReassignment(eventId, consumerGroup, ride, c, finalAttempts)
+                            : commitService.commitAssignment(eventId, consumerGroup, ride, c, finalAttempts);
                     if (committed) {
                         return c;
                     }

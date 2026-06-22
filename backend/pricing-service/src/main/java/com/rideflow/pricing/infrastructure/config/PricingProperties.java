@@ -48,13 +48,41 @@ public record PricingProperties(
 
     /**
      * Flat-baseline surge config. {@code overrides} wins per vehicle type when
-     * present; an empty map means everyone gets {@code defaultMultiplier}.
+     * present; an empty map means everyone gets {@code defaultMultiplier}. The
+     * optional {@code dynamic} block layers demand-based surge on top of this
+     * baseline (see {@code DemandSurgeProvider}); when absent, dynamic surge is
+     * disabled and only the flat baseline applies.
      */
-    public record Surge(BigDecimal defaultMultiplier, Map<VehicleType, BigDecimal> overrides) {
+    public record Surge(BigDecimal defaultMultiplier, Map<VehicleType, BigDecimal> overrides, Dynamic dynamic) {
         public Surge {
             if (defaultMultiplier == null || defaultMultiplier.signum() < 0)
                 throw new IllegalArgumentException("surge.default-multiplier must be >= 0");
             overrides = overrides == null ? Map.of() : Map.copyOf(overrides);
+            dynamic   = dynamic == null ? Dynamic.disabled() : dynamic;
+        }
+
+        /**
+         * Demand-based surge inputs. When {@code enabled}, the multiplier ramps
+         * from 1.0 (live supply &gt;= {@code targetSupply}) up to
+         * {@code maxMultiplier} (zero supply), counting drivers within
+         * {@code radiusMeters} of the pickup. Floored by the flat baseline above.
+         */
+        public record Dynamic(boolean enabled, int radiusMeters, int targetSupply, BigDecimal maxMultiplier) {
+            public Dynamic {
+                if (enabled) {
+                    if (radiusMeters <= 0)
+                        throw new IllegalArgumentException("surge.dynamic.radius-meters must be > 0");
+                    if (targetSupply <= 0)
+                        throw new IllegalArgumentException("surge.dynamic.target-supply must be > 0");
+                    if (maxMultiplier == null || maxMultiplier.compareTo(BigDecimal.ONE) < 0)
+                        throw new IllegalArgumentException("surge.dynamic.max-multiplier must be >= 1.0");
+                }
+            }
+
+            /** Disabled default — dynamic surge off; only the flat baseline applies. */
+            public static Dynamic disabled() {
+                return new Dynamic(false, 0, 0, BigDecimal.ONE);
+            }
         }
     }
 }
