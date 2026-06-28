@@ -118,7 +118,7 @@ The frontend surfaces a live **receipt** on trip completion and a **payment-meth
 | Frontend admin (live operator **metrics**, rate cards, surge) | ✅ (metrics + read-only tariffs/surge) |
 | Unit tests | ✅ 245 across the backend (domain + use cases) |
 | One-command run (compose incl. frontend) | ✅ |
-| Observability (Grafana dashboards), k8s manifests | 📐 Skeletons — not wired |
+| k8s manifests | 📐 Skeletons — not wired |
 | Security hardening (RS256/JWKS, HttpOnly sessions, service-to-service auth) | 📐 Demo-grade today |
 | Real payment processor (Stripe) | 📐 Simulated settlement only |
 
@@ -138,10 +138,9 @@ The frontend surfaces a live **receipt** on trip completion and a **payment-meth
 
 ## Roadmap (next rounds)
 
-1. **Observability**: Prometheus scrape + Grafana dashboards (dispatch latency, lock contention, WS connections, DLQ depth).
-2. **Kubernetes**: Kustomize bases/overlays + Helm chart (the `k8s/` tree is scaffolded).
-3. **Security hardening**: RS256/JWKS, HttpOnly cookie sessions, service-to-service auth.
-4. **Real payments**: swap the simulated settlement for a Stripe sandbox integration.
+1. **Kubernetes**: Kustomize bases/overlays + Helm chart (the `k8s/` tree is scaffolded).
+2. **Security hardening**: RS256/JWKS, HttpOnly cookie sessions, service-to-service auth.
+3. **Real payments**: swap the simulated settlement for a Stripe sandbox integration.
 5. **Integration/e2e tests**: Testcontainers across the consume → dispatch → settle → notify path.
 
 ---
